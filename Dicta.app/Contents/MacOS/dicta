@@ -1,0 +1,4 @@
+#!/bin/bash
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+cd "$DIR/../../../"
+PYTHONPATH=$PYTHONPATH:. python3 app/desktop_ui/main.py 

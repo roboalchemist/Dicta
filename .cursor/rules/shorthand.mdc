@@ -1,0 +1,32 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# The user might use shorthand to mean more complex ideas and topics. Think of this as a mapping lookup table from user words to meaning, these include:
+
+Term: deepdive, deep dive, deep-dive
+Meaning: use sequential thinking and perplexity to fully research and idea and genenerate a summary before pursuing it. Write the summary down in a markdown file in the <project-root>/docs folder (Create one if needed). Proceed with it after you have a plan written down.
+
+Term: follow the project plan
+Look at your worklog and the project plan, determine what the next step would be.
+
+Term: next
+Go look at your [todo.txt](mdc:todo.txt) if you have one. Follow the next todo that hasn't been completed yet. Mark as completed when finished.
+
+Term: document <topic>
+Write a markdown guide on how you did this topic and got it working, what pifalls you ran into and how you solved them, so we can keep track in the future of how to do this properly. Write this generically for the topic, not just for this specific project. 
+
+Term: test it
+Meaning: I don't believe this is real, because I don't have any proof. Make sure the appropiate tests have been written, and that they've been run, with the output results summarized.
+
+Term: go
+Meaning: Take everything you've talked about, and go and implement it.
+
+Term: continue
+Meaning: you were interrupted for some reason, and I want you to keep doing what you were doing with no interruption or changes
+
+
+Term: status, standup
+Meaning: I haven't been paying attention and there's too much outut I don't want to read. Break down in bullet points what's been done, what you're working on, if you're stuck on anything,  what you've tried, and what's left to do

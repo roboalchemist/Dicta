@@ -1,0 +1,53 @@
+---
+description: Project Specifications (Techstack, File Structure)
+globs: 
+alwaysApply: true
+---
+# Project Specifications
+
+## Technology Stack
+
+### Desktop UI
+
+- **Language**: Python
+- **Environment Manager**: uv
+- **Framework**: PyQt6
+- **Testing Framework**: pytest
+- **Test Types**: unit, integration
+
+### Deployment
+
+- **Containerization**: none
+- **Packaging Framework**: PyInstaller
+- **Package Targets**: dmg, exe, appimage
+- **Target Platforms**: macos, windows, linux
+
+## File Structure
+
+```
+└── dicta: Desktop application template using PyQt6 - suitable for windowed apps, system tray utilities, or menu bar tools
+    ├── .cursor: Cursor folder project
+    │   ├── mcp.json: Cursor mcps for this project
+    │   └── rules: Cursor rules for this project
+    │       ├── project-plan.mdc: The project plan for this project, with a todo list at the bottom
+    │       ├── shorthand.mdc: Cursor rules for this project
+    │       ├── specifications.mdc: Project Specifications (Techstack, File Structure, Description)
+    │       └── todo.mdc: Project Description, Plan, and Items left todo
+    ├── README.md: Project overview, tech stack, and usage instructions
+    ├── app: Main application code
+    │   ├── desktop_ui: Desktop UI application code
+    │   │   └── main.py: Application entry point
+    │   └── tests: Tests (pytest with pytest-qt)
+    │       ├── test-data: Test data folder used between tests (stored in repo)
+    │       └── test_app.py: Application tests
+    ├── data: Non-persistent data (gitignored)
+    ├── docs: Project documentation and specifications
+    │   └── worklog.md: an appended-only log of the work done on the project, dated and timestamped
+    ├── package.sh: Creates platform-specific packages (dmg/exe/appimage) using PyInstaller
+    ├── requirements.txt: Project dependencies
+    ├── scripts: Maintenance scripts (cleanup, data generation, etc.)
+    ├── start.sh: Application startup script - starts the desktop application
+    ├── test.sh: Test runner script - run all tests with a single command
+    └── tmp: Temporary data (gitignored)
+```
+

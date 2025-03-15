@@ -1,0 +1,49 @@
+---
+description: The project plan, with the description of the project and it's goals
+globs: 
+alwaysApply: true
+---
+## Project Name
+Dicta
+
+## Project Overview
+The goal of this application is to provide a hands-free way to interact with the computer, enabling users to control their system and input text through voice commands without needing to use a keyboard or mouse.
+
+
+## Project Requirements
+
+## Core Functionality
+- Access AI-compatible speech-to-text service
+- PyQT interface with menu bar icon (microphone)
+- Two transcription modes:
+ 1. Push-to-talk using a configurable hotkey
+ 2. Voice detection with automatic transcription
+- Streaming typing for real-time transcription
+
+## Menu Bar Icon
+- Microphone icon with color indicators:
+ - Red: Waiting to hear voice
+ - Yellow: Actively listening and transcribing
+ - Green: Currently typing text
+
+## Controls
+- Start/stop auto-listen via menu icon and dropdown
+- Default hotkey: Key above Tab/backward slash
+- Transcription activates while hotkey is pressed
+
+## Settings Options
+- Multiple OpenAPI-compatible whisper backends
+ - Configuration stored in `~/.dicta/config.json`
+- Default server selection: Fastest whisper server for GPU type
+ - Whisper.CPP for CUDA
+ - Alternative library for Apple Neural Engine
+- Selectable whisper model size (default: large V3)
+- Option to install via `pip install lightning-whisper-mlx`
+
+## Additional Features
+- Configurable keywords that translate to specific key presses
+ - Example: saying "escape" triggers Escape key
+ - Example: saying "arrow up" triggers Up arrow key
+ - Settings stored in `~/.dicta/config.json` in YAML format
+- Voice command to display an overlay showing all available hotkeys
+ - Configurable display duration before auto-dismissal

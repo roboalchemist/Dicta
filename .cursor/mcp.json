@@ -1,0 +1,49 @@
+{
+    "mcpServers": {
+        "@smithery-ai-server-sequential-thinking": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@smithery/cli@latest",
+              "run",
+              "@smithery-ai/server-sequential-thinking",
+              "--config",
+              "{}"
+            ]
+          },
+          "@kazuph-mcp-taskmanager": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@smithery/cli@latest",
+              "run",
+              "@kazuph/mcp-taskmanager",
+              "--config",
+              "{}"
+            ]
+        },
+        "@TheSethRose-fetch-browser": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@smithery/cli@latest",
+              "run",
+              "@TheSethRose/fetch-browser",
+              "--config",
+              "{}"
+            ]
+          },
+          "@wysh3-perplexity-mcp-zerver": {
+            "command": "npx",
+            "args": [
+              "-y",
+              "@smithery/cli@latest",
+              "run",
+              "@wysh3/perplexity-mcp-zerver",
+              "--config",
+              "{}"
+            ]
+          }
+    }
+}
+

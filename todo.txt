@@ -1,0 +1,38 @@
+Core Infrastructure Setup
+[x] Set up basic PyQt6 application structure with menu bar icon
+[x] Implement basic system tray functionality with color-changing microphone icon
+[x] Create configuration file structure (~/.dicta/config.json)
+
+Speech-to-Text Foundation
+[x] Research and integrate OpenAI-compatible speech-to-text service
+[x] Implement basic audio capture functionality
+[x] Set up streaming transcription pipeline
+
+Input Modes
+[x] Implement push-to-talk functionality with configurable hotkey
+[ ] Add voice detection mode with automatic transcription
+[ ] Create text input simulation system
+
+Settings and Configuration
+[x] Create settings interface for Whisper backend selection
+[x] Implement model size selection
+[ ] Add GPU detection for optimal backend selection
+[x] Set up YAML-based hotkey configuration
+
+Voice Commands
+[x] Implement basic keyboard command mapping
+[x] Create overlay system for displaying available commands
+[x] Add configuration interface for custom commands
+
+Testing and Documentation
+[x] Write unit tests for command functionality
+[x] Write integration tests for UI components
+[x] Fix test suite issues and improve reliability
+
+Next Priority Tasks:
+1. Add voice detection with automatic transcription
+2. Create text input simulation system
+3. Add GPU detection for optimal backend selection
+4. Add error handling and recovery for failed transcriptions
+5. Add logging for debugging and monitoring
+6. Create user documentation and setup guide

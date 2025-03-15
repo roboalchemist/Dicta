@@ -1,0 +1,14 @@
+PyQt6>=6.4.0
+PyQt6-QtSvg>=6.4.0
+pytest>=7.0.0
+pytest-qt>=4.2.0
+pytest-cov>=4.1.0
+pyinstaller>=6.0.0
+groq>=0.3.0
+pytest-asyncio>=0.23.0
+pyaudio>=0.2.13
+numpy>=1.24.0
+pydub>=0.25.1
+keyboard>=0.13.5
+webrtcvad>=2.0.10
+SpeechRecognition>=3.10.0 
