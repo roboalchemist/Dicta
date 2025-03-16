@@ -10,8 +10,9 @@ logger = logging.getLogger(__name__)
 DEFAULT_CONFIG = {
     "whisper": {
         "backend": "auto",  # auto, whisper.cpp, openai
-        "model_size": "large-v3",
+        "model_size": "tiny",
         "device": "auto",  # auto, cpu, cuda, mps
+        "use_coreml": True,  # Enable CoreML on Apple Silicon by default
     },
     "voice_commands": {
         "escape": "Escape",
@@ -33,7 +34,7 @@ DEFAULT_CONFIG = {
     }
 }
 
-class ConfigManager:
+class Config:
     """Manages application configuration."""
     
     def __init__(self):
@@ -98,12 +99,13 @@ class ConfigManager:
             logger.error(f"Error saving config: {e}")
             raise
     
-    def get(self, section: str, key: Optional[str] = None) -> Any:
+    def get(self, section: str, key: Optional[str] = None, default: Any = None) -> Any:
         """Get a configuration value.
         
         Args:
             section: The configuration section
             key: The specific key in the section (optional)
+            default: Default value if key doesn't exist (optional)
             
         Returns:
             The configuration value or section
@@ -114,7 +116,11 @@ class ConfigManager:
             return self.config[section][key]
         except KeyError:
             if key is None:
+                if default is not None:
+                    return default
                 return DEFAULT_CONFIG[section]
+            if default is not None:
+                return default
             return DEFAULT_CONFIG[section][key]
     
     def set(self, section: str, key: str, value: Any) -> None:
@@ -171,4 +177,8 @@ class ConfigManager:
                 logger.info(f"Removed config: {section}.{key}")
         except Exception as e:
             logger.error(f"Error removing config value: {e}")
-            raise 
+            raise
+
+# Create a singleton instance
+config = Config()
+__all__ = ['Config', 'config'] 

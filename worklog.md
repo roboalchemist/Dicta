@@ -54,4 +54,12 @@ Next steps:
 1. Add voice detection with automatic transcription
 2. Implement streaming typing for real-time transcription
 3. Add settings dialog for configuration options
-4. Add keyboard shortcut overlay display 
+4. Add keyboard shortcut overlay display
+
+## March 15, 2024 (continued)
+- Fixed icon conversion script to use correct paths and ImageMagick syntax
+- Successfully generated app.ico and app.icns files from app.png for cross-platform support
+- Icons are now properly organized in app/assets/icons/
+- Removed unused SVG icon and PyQt6-QtSvg dependency since we've switched to PNG/ICO/ICNS format
+- Switched from whisper-cpp-python to pywhispercpp for better Python compatibility and CoreML support
+- Added automatic CoreML support detection and installation for Apple Silicon devices 

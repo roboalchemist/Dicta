@@ -1,8 +1,9 @@
 """Speech manager module."""
 import logging
-import speech_recognition as sr
 from PyQt6.QtCore import QObject, pyqtSignal
 from app.audio.vad import VADManager
+from app.audio.audio_capture import AudioCapture
+from app.speech.whisper_cpp import WhisperCppService
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +14,16 @@ class SpeechManager(QObject):
     transcription_ready = pyqtSignal(str)  # Emitted when transcription is ready
     status_changed = pyqtSignal(str)  # Emitted when status changes
     
-    def __init__(self, parent=None):
+    def __init__(self, speech_service, parent=None):
+        """Initialize the speech manager.
+        
+        Args:
+            speech_service: The speech-to-text service to use
+            parent: Parent QObject
+        """
         super().__init__(parent)
-        self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
+        self.audio_capture = AudioCapture()
+        self.whisper = speech_service
         self.is_listening = False
         self.auto_listen = False
         
@@ -27,27 +34,22 @@ class SpeechManager(QObject):
             speech_threshold=3  # 90ms of speech to start
         )
         
-        # Connect VAD signals
+        # Connect signals
         self.vad_manager.speech_started.connect(self.on_speech_started)
         self.vad_manager.speech_ended.connect(self.on_speech_ended)
-        
-        # Calibrate microphone
-        with self.microphone as source:
-            self.recognizer.adjust_for_ambient_noise(source)
+        self.audio_capture.audio_data.connect(self.on_audio_data)
             
     def start_listening(self):
         """Start listening for speech."""
         if not self.is_listening:
             self.is_listening = True
             self.status_changed.emit("Listening")
-            if self.auto_listen:
-                self.listen_with_vad()
-            else:
-                self.listen()
+            self.audio_capture.start()
             
     def stop_listening(self):
         """Stop listening for speech."""
         self.is_listening = False
+        self.audio_capture.stop()
         self.status_changed.emit("Stopped")
         
     def toggle_auto_listen(self, enabled):
@@ -58,58 +60,27 @@ class SpeechManager(QObject):
         else:
             self.stop_listening()
             
-    def listen(self):
-        """Listen for speech and transcribe it."""
+    def on_audio_data(self, audio_data):
+        """Handle incoming audio data."""
         if not self.is_listening:
             return
             
+        # Process through VAD if in auto-listen mode
+        if self.auto_listen:
+            self.vad_manager.process_frame(audio_data)
+        else:
+            # Direct transcription when manually triggered
+            self.process_audio(audio_data)
+            
+    def process_audio(self, audio_data):
+        """Process audio data through Whisper.cpp."""
         try:
-            with self.microphone as source:
-                audio = self.recognizer.listen(source)
-                
-            try:
-                text = self.recognizer.recognize_google(audio)
+            text = self.whisper.transcribe_audio(audio_data)
+            if text.strip():  # Only emit if we got actual text
                 self.transcription_ready.emit(text)
-                
-                if self.auto_listen:
-                    self.listen()  # Continue listening if auto-listen is enabled
-                    
-            except sr.UnknownValueError:
-                logger.warning("Speech was unintelligible")
-                if self.auto_listen:
-                    self.listen()
-                    
-            except sr.RequestError as e:
-                logger.error(f"Could not request results from speech recognition service: {e}")
-                if self.auto_listen:
-                    self.listen()
-                    
         except Exception as e:
-            logger.error(f"Error during speech recognition: {e}")
-            if self.auto_listen:
-                self.listen()
-                
-    def listen_with_vad(self):
-        """Listen for speech using VAD."""
-        if not self.is_listening:
-            return
+            logger.error(f"Error transcribing audio: {e}")
             
-        try:
-            with self.microphone as source:
-                # Configure source for VAD
-                source.SAMPLE_RATE = 16000
-                source.CHUNK = 480  # 30ms at 16kHz
-                
-                # Start listening
-                while self.is_listening:
-                    buffer = source.stream.read(source.CHUNK)
-                    self.vad_manager.process_frame(buffer)
-                    
-        except Exception as e:
-            logger.error(f"Error during VAD listening: {e}")
-            if self.auto_listen:
-                self.listen_with_vad()
-                
     def on_speech_started(self):
         """Handle speech start event."""
         logger.debug("Speech started")
@@ -120,24 +91,9 @@ class SpeechManager(QObject):
         logger.debug("Speech ended")
         self.status_changed.emit("Processing")
         
-        try:
-            with self.microphone as source:
-                audio = self.recognizer.listen(source, timeout=1.0)
-                
-            try:
-                text = self.recognizer.recognize_google(audio)
-                self.transcription_ready.emit(text)
-                
-            except sr.UnknownValueError:
-                logger.warning("Speech was unintelligible")
-                
-            except sr.RequestError as e:
-                logger.error(f"Could not request results from speech recognition service: {e}")
-                
-        except Exception as e:
-            logger.error(f"Error during speech recognition: {e}")
+        # Process accumulated audio through Whisper
+        if hasattr(self, '_current_audio'):
+            self.process_audio(self._current_audio)
             
-        finally:
-            if self.auto_listen:
-                self.status_changed.emit("Listening")
-                self.listen_with_vad() 
+        if self.auto_listen:
+            self.status_changed.emit("Listening") 
