@@ -45,9 +45,9 @@ class GroqWhisperService(SpeechToText):
     """Implementation of speech-to-text using Groq's Whisper API."""
     
     MODELS = {
-        "fast": "distil-whisper-large-v3-en",  # Fastest, English-only
-        "balanced": "whisper-large-v3-turbo",  # Good balance of speed and features
-        "accurate": "whisper-large-v3"  # Most accurate, full features
+        "fast": "distil-small.en",  # Fastest, English-only
+        "balanced": "distil-large-v3",  # Good balance of speed and features
+        "accurate": "large-v3"  # Most accurate, full features
     }
     
     def __init__(self, api_key: Optional[str] = None, model: str = "balanced"):
@@ -179,9 +179,9 @@ class GroqWhisperBackend(SpeechToText):
     """Groq Whisper API implementation of speech-to-text."""
     
     MODELS = {
-        "fast": "groq-distil-whisper",  # Fastest, English-only
-        "balanced": "whisper-large-v3-turbo",  # Good balance of speed and features
-        "accurate": "whisper-large-v3"  # Most accurate, full features
+        "fast": "distil-small.en",  # Fastest, English-only
+        "balanced": "distil-large-v3",  # Good balance of speed and features
+        "accurate": "large-v3"  # Most accurate, full features
     }
     
     def __init__(self, api_key: Optional[str] = None, model: str = "balanced"):

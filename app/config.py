@@ -1,184 +1,101 @@
-"""Configuration manager for Dicta application."""
+"""Configuration management for the application."""
+
 import os
 import json
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer
 
 logger = logging.getLogger(__name__)
 
+# Default configuration
 DEFAULT_CONFIG = {
-    "whisper": {
-        "backend": "auto",  # auto, whisper.cpp, openai
-        "model_size": "tiny",
-        "device": "auto",  # auto, cpu, cuda, mps
-        "use_coreml": True,  # Enable CoreML on Apple Silicon by default
-    },
-    "voice_commands": {
-        "escape": "Escape",
-        "arrow up": "Up",
-        "arrow down": "Down",
-        "arrow left": "Left",
-        "arrow right": "Right",
-        "enter": "Return",
-        "tab": "Tab",
-        "space": "Space"
-    },
-    "hotkeys": {
-        "push_to_talk": "`",  # Key above Tab/backward slash
-        "toggle_listening": "Alt+M",
-    },
-    "ui": {
-        "overlay_duration": 3.0,  # seconds
-        "typing_delay": 0.05,  # seconds between characters
+    "service": "MLX",  # MLX or Groq
+    "model_size": "large-v3",  # tiny, small, medium, large-v3
+    "hotkey": "ctrl+shift+space",
+    "auto_listen": True,  # Enable auto-listening by default
+    "vad_threshold": 0.5,  # VAD threshold (0-1)
+    "vad_silence_threshold": 10,  # Number of silence frames to trigger silence
+    "vad_speech_threshold": 3,  # Number of speech frames to trigger speech
+    "vad_sampling_rate": 16000,  # Audio sampling rate for VAD
+    "vad_pre_buffer": 0.3,  # Seconds of audio to keep before speech
+    "vad_post_buffer": 0.2,  # Seconds of audio to keep after speech
+    "notification_duration": 2000,  # Duration of notifications in milliseconds
+    "typing_speed": 0.01,  # Seconds between typed characters
+    "commands": {
+        "escape": "escape",
+        "enter": "enter",
+        "tab": "tab",
+        "up": "up",
+        "down": "down",
+        "left": "left",
+        "right": "right",
+        "backspace": "backspace",
+        "delete": "delete",
+        "space": "space",
+        "stop": "command+delete",  # Stop command
+        "accept": "command+enter"   # Accept command
     }
 }
 
-class Config:
-    """Manages application configuration."""
+class Config(QObject):
+    """Configuration manager."""
+    
+    # Signal emitted when configuration changes
+    config_changed = pyqtSignal()
     
     def __init__(self):
-        """Initialize the configuration manager."""
+        """Initialize configuration with defaults."""
+        super().__init__()
         self.config_dir = Path.home() / ".dicta"
         self.config_file = self.config_dir / "config.json"
-        self.config: Dict[str, Any] = {}
-        self._ensure_config_exists()
-        self.load_config()
+        self.config = DEFAULT_CONFIG.copy()  # Use the defined defaults
+        self.has_unsaved_changes = False
+        
+        # Load config from file
+        self.load()
     
-    def _ensure_config_exists(self) -> None:
-        """Ensure the configuration directory and file exist."""
-        try:
-            # Create config directory if it doesn't exist
-            self.config_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create config file with default values if it doesn't exist
-            if not self.config_file.exists():
-                self.config = DEFAULT_CONFIG.copy()
-                self.save_config()
-                logger.info(f"Created default configuration at {self.config_file}")
-            
-        except Exception as e:
-            logger.error(f"Error ensuring config exists: {e}")
-            raise
+    def load(self):
+        """Load configuration from file."""
+        if self.config_file.exists():
+            try:
+                with open(self.config_file, "r") as f:
+                    loaded_config = json.load(f)
+                    self.config.update(loaded_config)
+                    self.config_changed.emit()
+                    logger.info("Configuration loaded successfully")
+            except Exception as e:
+                logger.error(f"Error loading config: {e}")
     
-    def load_config(self) -> None:
-        """Load the configuration from file."""
-        try:
-            with open(self.config_file, 'r') as f:
-                self.config = json.load(f)
-            logger.info(f"Loaded configuration from {self.config_file}")
+    def save(self):
+        """Save configuration to file."""
+        if not self.has_unsaved_changes:
+            return
             
-            # Update config with any new default values
-            updated = False
-            for section, values in DEFAULT_CONFIG.items():
-                if section not in self.config:
-                    self.config[section] = values
-                    updated = True
-                elif isinstance(values, dict):
-                    for key, value in values.items():
-                        if key not in self.config[section]:
-                            self.config[section][key] = value
-                            updated = True
-            
-            if updated:
-                self.save_config()
-                logger.info("Updated configuration with new default values")
-                
-        except Exception as e:
-            logger.error(f"Error loading config: {e}")
-            self.config = DEFAULT_CONFIG.copy()
-            self.save_config()
-    
-    def save_config(self) -> None:
-        """Save the current configuration to file."""
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         try:
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, "w") as f:
                 json.dump(self.config, f, indent=4)
-            logger.info(f"Saved configuration to {self.config_file}")
+            self.has_unsaved_changes = False
+            logger.info("Configuration saved successfully")
         except Exception as e:
             logger.error(f"Error saving config: {e}")
-            raise
     
-    def get(self, section: str, key: Optional[str] = None, default: Any = None) -> Any:
-        """Get a configuration value.
-        
-        Args:
-            section: The configuration section
-            key: The specific key in the section (optional)
-            default: Default value if key doesn't exist (optional)
-            
-        Returns:
-            The configuration value or section
-        """
-        try:
-            if key is None:
-                return self.config[section]
-            return self.config[section][key]
-        except KeyError:
-            if key is None:
-                if default is not None:
-                    return default
-                return DEFAULT_CONFIG[section]
-            if default is not None:
-                return default
-            return DEFAULT_CONFIG[section][key]
+    def get(self, key: str, default=None):
+        """Get a configuration value."""
+        return self.config.get(key, default)
     
-    def set(self, section: str, key: str, value: Any) -> None:
-        """Set a configuration value.
-        
-        Args:
-            section: The configuration section
-            key: The key to set
-            value: The value to set
+    def set(self, key: str, value):
+        """Set a configuration value."""
+        if self.config.get(key) != value:
+            self.config[key] = value
+            self.has_unsaved_changes = True
+            self.config_changed.emit()
             
-        Raises:
-            TypeError: If section or key is not a string
-            ValueError: If section is not in DEFAULT_CONFIG
-        """
-        if not isinstance(section, str):
-            raise TypeError(f"Section must be a string, got {type(section)}")
-        if not isinstance(key, str):
-            raise TypeError(f"Key must be a string, got {type(key)}")
-        if section not in DEFAULT_CONFIG:
-            raise ValueError(f"Invalid section: {section}")
-            
-        try:
-            if section not in self.config:
-                self.config[section] = {}
-            self.config[section][key] = value
-            self.save_config()
-            logger.info(f"Updated config: {section}.{key} = {value}")
-        except Exception as e:
-            logger.error(f"Error setting config value: {e}")
-            raise
-    
-    def remove(self, section: str, key: str) -> None:
-        """Remove a configuration value.
-        
-        Args:
-            section: The configuration section
-            key: The key to remove
-            
-        Raises:
-            TypeError: If section or key is not a string
-            ValueError: If section is not in DEFAULT_CONFIG
-        """
-        if not isinstance(section, str):
-            raise TypeError(f"Section must be a string, got {type(section)}")
-        if not isinstance(key, str):
-            raise TypeError(f"Key must be a string, got {type(key)}")
-        if section not in DEFAULT_CONFIG:
-            raise ValueError(f"Invalid section: {section}")
-            
-        try:
-            if section in self.config and key in self.config[section]:
-                del self.config[section][key]
-                self.save_config()
-                logger.info(f"Removed config: {section}.{key}")
-        except Exception as e:
-            logger.error(f"Error removing config value: {e}")
-            raise
+            # Save after a short delay to batch multiple changes
+            QTimer.singleShot(1000, self.save)
 
-# Create a singleton instance
+# Global configuration instance
 config = Config()
+
 __all__ = ['Config', 'config'] 

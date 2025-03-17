@@ -1,9 +1,77 @@
-"""Tests for the configuration manager."""
+"""Test configuration management."""
+
 import os
 import json
-import pytest
+import tempfile
 from pathlib import Path
-from app.config import ConfigManager, DEFAULT_CONFIG
+import pytest
+from app.config import Config, DEFAULT_CONFIG
+
+def test_config_initialization():
+    """Test that Config initializes correctly."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create a test config in a temporary directory
+        config = Config()
+        config.config_dir = Path(temp_dir)
+        config.config_file = config.config_dir / "config.json"
+        
+        # Check that default values are set
+        assert config.get("service") == "MLX"
+        assert config.get("model_size") == "medium"
+        assert config.get("hotkey") == "ctrl+shift+space"
+        assert config.get("auto_listen") is False
+
+def test_config_save_and_load():
+    """Test saving and loading configuration."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        # Create a test config
+        config = Config()
+        config.config_dir = Path(temp_dir)
+        config.config_file = config.config_dir / "config.json"
+        
+        # Modify some values
+        config.set("service", "Groq")
+        config.set("model_size", "large-v3")
+        config.save()
+        
+        # Create a new config instance to load the saved values
+        config2 = Config()
+        config2.config_dir = Path(temp_dir)
+        config2.config_file = config2.config_dir / "config.json"
+        config2.load()
+        
+        # Check that values were loaded correctly
+        assert config2.get("service") == "Groq"
+        assert config2.get("model_size") == "large-v3"
+
+def test_config_get_default():
+    """Test getting configuration with default values."""
+    config = Config()
+    
+    # Test getting existing value
+    assert config.get("service") == "MLX"
+    
+    # Test getting non-existent value with default
+    assert config.get("non_existent", "default") == "default"
+    
+    # Test getting non-existent value without default
+    assert config.get("non_existent") is None
+
+def test_config_set():
+    """Test setting configuration values."""
+    with tempfile.TemporaryDirectory() as temp_dir:
+        config = Config()
+        config.config_dir = Path(temp_dir)
+        config.config_file = config.config_dir / "config.json"
+        
+        # Set a new value
+        config.set("test_key", "test_value")
+        assert config.get("test_key") == "test_value"
+        
+        # Verify the value was saved to file
+        with open(config.config_file, "r") as f:
+            saved_config = json.load(f)
+            assert saved_config["test_key"] == "test_value"
 
 @pytest.fixture
 def temp_home(tmp_path):
@@ -16,7 +84,7 @@ def temp_home(tmp_path):
 
 def test_config_creation(temp_home):
     """Test that the configuration file is created with default values."""
-    config = ConfigManager()
+    config = Config()
     
     # Check that the config directory was created
     assert config.config_dir.exists()
@@ -50,7 +118,7 @@ def test_config_loading(temp_home):
         json.dump(custom_config, f)
     
     # Load the config
-    config = ConfigManager()
+    config = Config()
     
     # Check that our custom values were loaded
     assert config.get("whisper", "backend") == "whisper.cpp"
@@ -63,14 +131,14 @@ def test_config_loading(temp_home):
 
 def test_config_saving(temp_home):
     """Test that configuration changes can be saved."""
-    config = ConfigManager()
+    config = Config()
     
     # Make some changes
     config.set("whisper", "backend", "openai")
     config.set("hotkeys", "push_to_talk", "Ctrl+Space")
     
     # Create a new config manager to load from disk
-    config2 = ConfigManager()
+    config2 = Config()
     
     # Check that our changes were saved
     assert config2.get("whisper", "backend") == "openai"
@@ -78,7 +146,7 @@ def test_config_saving(temp_home):
 
 def test_config_error_handling(temp_home):
     """Test error handling in the configuration manager."""
-    config = ConfigManager()
+    config = Config()
     
     # Test getting non-existent section/key
     with pytest.raises(KeyError):

@@ -1,16 +1,30 @@
-PyQt6==6.6.1
+PyQt6>=6.4.0
 PyQt6-Qt6==6.6.1
 PyQt6-sip==13.6.0
-pytest>=7.0.0
+pytest>=7.4.3
 pytest-qt>=4.2.0
 pytest-cov>=4.1.0
 pyinstaller>=6.0.0
 groq>=0.3.0
 pytest-asyncio>=0.23.0
 pyaudio>=0.2.13
-numpy>=1.24.0
+numpy>=1.24.1
 pydub>=0.25.1
 keyboard>=0.13.5
 webrtcvad>=2.0.10
 SpeechRecognition>=3.10.0
-git+https://github.com/absadiki/pywhispercpp#egg=pywhispercpp 
+lightning-whisper-mlx==0.0.10
+huggingface-hub>=0.20.0
+soundfile>=0.12.1
+scipy
+tiktoken==0.3.3
+pyobjc-framework-Cocoa>=9.2; sys_platform == 'darwin'
+pyobjc-framework-ApplicationServices>=9.2; sys_platform == 'darwin'
+pyobjc-framework-CoreText>=9.2; sys_platform == 'darwin'
+sounddevice>=0.4.6
+openai-whisper>=20231117
+torch>=2.1.0
+torchaudio>=2.1.0
+onnxruntime>=1.16.1
+ffmpeg-python>=0.2.0
+git+https://github.com/snakers4/silero-vad 

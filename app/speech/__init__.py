@@ -1,6 +1,6 @@
-"""Speech-to-text services."""
+"""Speech recognition and transcription services."""
+
 from .base import SpeechToText
-from .whisper_cpp import WhisperCppService
 from .groq import GroqWhisperService
 
-__all__ = ['SpeechToText', 'WhisperCppService', 'GroqWhisperService'] 
+__all__ = ['SpeechToText', 'GroqWhisperService'] 

@@ -101,7 +101,6 @@ Implemented speech-to-text functionality using Groq's Whisper API:
 - Created abstract `SpeechToText` base class for future backend flexibility
 - Implemented `GroqWhisperBackend` with three model options:
   - "fast" (groq-distil-whisper) - Fastest, English-only
-  - "balanced" (whisper-large-v3-turbo) - Good balance of speed and features
   - "accurate" (whisper-large-v3) - Most accurate, full features
 - Added comprehensive test suite with mocked API calls
 - Configured environment-based API key management
@@ -238,3 +237,146 @@ Key learnings:
   - Control speech recognition output
   - Track typed text for verification
 - All tests passing successfully
+
+## 2025-03-15: Debugging CoreML Support in pywhispercpp
+
+### Issue
+When trying to use Metal acceleration with the submenu option, the application crashes with the error:
+
+```
+whisper_init_state: failed to load Core ML model from '/Users/joseph.schlesinger/Library/Application Support/pywhispercpp/models/ggml-tiny-encoder.mlmodelc'
+python(22940,0x201f78840) malloc: *** error for object 0x546b04c9525b04c9: pointer being freed was not allocated
+```
+
+The issue occurs because while we have the pywhispercpp package built with CoreML support enabled, the necessary CoreML model file is missing.
+
+### Initial Findings
+1. The pywhispercpp library has CoreML support enabled through the `WHISPER_COREML=1` environment variable in the start.sh script
+2. The Python bindings don't directly expose CoreML-specific parameters like "backend" or "use_coreml"
+3. The error occurs because the CoreML model file (`ggml-tiny-encoder.mlmodelc`) is missing at the expected location
+
+### Solution
+1. Created a script to generate the CoreML model: `scripts/generate_coreml_model.py`
+2. Updated the script to use the correct input dimensions for the encoder (128 mel frequency channels)
+3. Successfully generated CoreML models for both tiny and large-v3 models
+4. The CoreML models are now available at:
+   - `/Users/[username]/Library/Application Support/pywhispercpp/models/ggml-tiny-encoder.mlmodelc`
+   - `/Users/[username]/Library/Application Support/pywhispercpp/models/ggml-large-v3-encoder.mlmodelc`
+
+### Technical Details
+- The Whisper encoder expects mel spectrogram input with shape (batch_size, n_mels, n_frames)
+- n_mels is always 128 for all Whisper models
+- The CoreML models are generated using PyTorch's JIT tracing and coremltools
+- Models are configured to use Metal acceleration (ComputeUnit.ALL)
+
+### Usage Instructions
+To enable CoreML support:
+1. Install dependencies: `pip install openai-whisper coremltools torch`
+2. Generate the CoreML model: `python scripts/generate_coreml_model.py [model_name]`
+   - For tiny model: `python scripts/generate_coreml_model.py tiny`
+   - For large-v3 model: `python scripts/generate_coreml_model.py large-v3`
+3. The models will be generated in the pywhispercpp models directory
+4. Enable Metal acceleration through the application's submenu
+
+### References
+- [whisper.cpp CoreML support documentation](https://github.com/ggerganov/whisper.cpp#core-ml-support)
+- [pywhispercpp repository](https://github.com/abdeladim-s/pywhispercpp)
+- [OpenAI Whisper documentation](https://github.com/openai/whisper)
+- [CoreML Tools documentation](https://coremltools.readme.io/docs)
+
+## 2024-03-15 17:00 PST - Switched from pywhispercpp to lightning-whisper-mlx
+
+### Changes Made
+- Removed pywhispercpp from the codebase and dependencies
+- Deleted the pywhispercpp directory and related files
+- Updated requirements.txt to use lightning-whisper-mlx instead
+- Removed pywhispercpp-specific code from start.sh
+- Deleted app/speech/whisper_cpp.py as it's been replaced by WhisperService
+- Added huggingface-hub dependency for model management
+
+### Benefits
+- Simplified dependency management
+- Better native support for Apple Silicon through MLX
+- More efficient model loading and caching
+- Improved transcription performance
+- Cleaner codebase without custom builds
+
+### Next Steps
+- Test transcription performance with different models
+- Optimize model caching and loading
+- Add streaming transcription support
+- Implement voice activity detection integration
+
+## 2024-03-15 03:15 AM: Removed WhisperCppService and Switched to MLX
+
+### Changes Made
+1. Removed all references to WhisperCppService and Whisper.cpp
+2. Updated configuration to use MLX as the default service
+3. Simplified configuration structure
+4. Updated UI to show MLX models instead of Whisper.cpp models
+5. Fixed imports in app/speech/__init__.py
+6. Updated tests to match new configuration structure
+
+### Key Updates
+- Removed WhisperCppService from imports and UI
+- Set MLX as the default transcription service
+- Updated configuration to use a simpler flat structure
+- Added proper model handling for MLX models
+- Improved error handling and logging
+- Added user feedback for service and model changes
+
+### Next Steps
+1. Test the MLX service with different model sizes
+2. Add performance monitoring
+3. Implement model caching
+4. Add support for quantized models
+5. Create comprehensive tests for the MLX service
+
+### Technical Details
+- Using lightning-whisper-mlx==0.0.10 for stability
+- Models are downloaded from mlx-community
+- Added support for all available MLX models:
+  * tiny, small, medium, large-v3
+  * distil-small.en, distil-medium.en
+  * distil-large-v3
+- Models are stored in ./mlx_models directory
+- Added Apple Silicon detection in start.sh
+
+## 2024-03-16 23:15 - Fixed VAD Frame Size Issues
+
+Fixed issues with "Not enough samples" warnings in the Voice Activity Detection (VAD) system:
+
+1. Updated `VADManager` to properly buffer audio samples until it has enough for a complete frame
+2. Changed `AudioService` chunk size to match Silero VAD's expected frame size (96ms at 16kHz = 1536 samples)
+3. Added better debug logging throughout the audio processing pipeline
+4. Improved error handling and frame processing in `SpeechThread`
+
+These changes should result in more accurate voice activity detection and eliminate the frequent warnings about insufficient samples.
+
+## 2024-03-16 23:20 - Corrected VAD Frame Size
+
+Fixed frame size mismatch with Silero VAD:
+
+1. Updated frame sizes to match Silero VAD requirements:
+   - For 16kHz: exactly 512 samples (32ms)
+   - For 8kHz: exactly 256 samples (32ms)
+2. Changed `AudioService` chunk size to match Silero VAD's requirements
+3. Updated `VADManager` to use correct frame duration and sample count
+4. Improved error handling and logging for frame size validation
+
+This fixes the "Provided number of samples is 1536" error by ensuring we provide exactly the frame size that Silero VAD expects.
+
+## 2024-03-16 23:30 - Switched to MLX Faster Whisper
+
+Updated the WhisperService to use MLX Faster Whisper for improved transcription speed:
+
+1. Replaced standard whisper with LightningWhisperMLX
+2. Added optimizations for faster inference:
+   - Using MLX backend for Apple Silicon
+   - Using float16 compute type
+   - Optimized beam search parameters
+   - Greedy decoding with temperature=0
+3. Added local model storage in ./mlx_models
+4. Added detailed timing information for transcription process
+
+These changes should significantly improve transcription speed on Apple Silicon devices.

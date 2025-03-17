@@ -1,6 +1,7 @@
 """Voice command to keyboard mapping functionality."""
 import logging
 import keyboard
+import string
 from typing import Dict, Optional
 from PyQt6.QtCore import QObject, pyqtSignal
 from app.config import config
@@ -28,7 +29,18 @@ class CommandMapper(QObject):
         
     def load_commands(self):
         """Load commands from config."""
-        config_commands = self.config.get("voice_commands")
+        config_commands = self.config.get("commands", {
+            "escape": "escape",
+            "enter": "enter",
+            "tab": "tab",
+            "up": "up",
+            "down": "down",
+            "left": "left",
+            "right": "right",
+            "backspace": "backspace",
+            "delete": "delete",
+            "space": "space"
+        })
         if isinstance(config_commands, dict):
             self.commands = {k.lower(): v for k, v in config_commands.items()}
         return self.commands
@@ -84,6 +96,21 @@ class CommandMapper(QObject):
             logger.warning(f"Command not found: {command}")
             return False
     
+    def _clean_text(self, text: str) -> str:
+        """Clean text by converting to lowercase and removing punctuation/whitespace.
+        
+        Args:
+            text: The text to clean
+            
+        Returns:
+            str: The cleaned text
+        """
+        # Convert to lowercase
+        text = text.lower()
+        # Remove punctuation and whitespace from start/end
+        text = text.strip(string.punctuation + string.whitespace)
+        return text
+        
     def process_text(self, text: str) -> bool:
         """Process transcribed text and execute command if found.
         
@@ -93,7 +120,9 @@ class CommandMapper(QObject):
         Returns:
             bool: True if command was found and executed
         """
-        text = text.lower()
+        # Clean the input text
+        text = self._clean_text(text)
+        
         if text in self.commands:
             try:
                 keyboard.press_and_release(self.commands[text])
