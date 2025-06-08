@@ -6,13 +6,65 @@ import numpy as np
 import logging
 import soundfile as sf
 import tempfile
+import traceback
 from typing import Optional, List
 import os
 import time
+import librosa
 
 from .speech_to_text import SpeechToText, TranscriptionResult
 
 logger = logging.getLogger(__name__)
+
+# MLX compatibility patch for parakeet-mlx
+def _patch_mlx_compatibility():
+    """Patch MLX compatibility issues with parakeet-mlx."""
+    try:
+        import mlx.core as mx
+        
+        # Store original concat function
+        _original_concat = mx.concat
+        
+        def patched_concat(*args, **kwargs):
+            """Patched concat function that handles signature mismatches."""
+            try:
+                # The key insight: MLX expects axis as keyword-only argument
+                # Signature: concat(arrays, axis=0, *, stream=None)
+                
+                if len(args) >= 1:
+                    arrays = args[0]
+                    
+                    # Determine axis value
+                    if len(args) >= 2:
+                        # Called with positional axis: mx.concat([arrays], axis_value)
+                        axis_value = args[1]
+                    elif 'axis' in kwargs:
+                        # Called with keyword axis: mx.concat([arrays], axis=axis_value)
+                        axis_value = kwargs.pop('axis')  # Remove from kwargs to avoid duplicate
+                    else:
+                        # Default axis
+                        axis_value = 0
+                    
+                    # Always call with axis as keyword argument
+                    return _original_concat(arrays, axis=axis_value, **kwargs)
+                
+                # Fallback to original if no arrays provided
+                return _original_concat(*args, **kwargs)
+                
+            except Exception as e:
+                logger.debug(f"MLX concat patch failed: {e}")
+                # Last resort - try the original call
+                return _original_concat(*args, **kwargs)
+        
+        # Replace the concat function
+        mx.concat = patched_concat
+        logger.info("Applied MLX compatibility patch for concat function")
+        
+    except Exception as e:
+        logger.warning(f"Failed to apply MLX compatibility patch: {e}")
+
+# Apply the patch when the module is imported
+_patch_mlx_compatibility()
 
 class ParakeetModel(Enum):
     """Available Parakeet models."""
@@ -31,43 +83,42 @@ class ParakeetService(SpeechToText):
     _instance = None
     _initialized = False
     
-    def __new__(cls, model_type: str = "mlx-community/parakeet-rnnt-0.6b"):
+    def __new__(cls, model_type: str = "mlx-community/parakeet-rnnt-1.1b"):
         """Create or return the singleton instance."""
         if cls._instance is None:
             cls._instance = super(ParakeetService, cls).__new__(cls)
         return cls._instance
     
-    def __init__(self, model_type: str = "mlx-community/parakeet-rnnt-0.6b"):
+    def __init__(self, model_type: str = "mlx-community/parakeet-rnnt-1.1b"):
         """Initialize parakeet service."""
         if not self._initialized:
             super().__init__()
             self._model = None
             self._model_type = None
             self._initialized = True
+            self._streaming_transcriber = None
+            self._last_finalized_text = ""
+            self._word_count = 0
+            # Intelligent buffering for high-accuracy "streaming" using regular API
+            self._audio_buffer = []
+            self._buffer_duration_ms = 1000  # 1 second buffer for high accuracy
+            self._overlap_duration_ms = 200   # 200ms overlap to maintain context
+            self._min_process_ms = 800        # Minimum 800ms before processing
+            self._target_sample_rate = 16000  # Optimal sample rate for Parakeet
+            self._last_processed_words = set()  # Track words to avoid duplicates
         
         # Always update model type if it changes
         if model_type != self._model_type:
             self._model_type = model_type
             self._model = None
+            self._streaming_transcriber = None
+            self._last_finalized_text = ""
+            self._word_count = 0
+            self._audio_buffer = []
+            # Note: DON'T reset _last_processed_words to preserve deduplication state
+            # across model changes. Only reset it on explicit start_streaming() calls.
             logger.info(f"Model type changed to {model_type}")
             # Don't initialize model here - do it lazily when needed
-    
-    def _initialize_model(self):
-        """Initialize the Parakeet model."""
-        try:
-            logger.info(f"Loading Parakeet model: {self._model_type}")
-            # Lazy import parakeet_mlx only when needed
-            from parakeet_mlx import from_pretrained
-            
-            self._model = from_pretrained(self._model_type)
-            self._is_initialized = True
-            logger.info(f"Successfully loaded Parakeet model: {self._model_type}")
-            
-        except Exception as e:
-            logger.error(f"Error initializing model {self._model_type}: {e}")
-            self._model = None
-            self._is_initialized = False
-            raise
     
     @property
     def model_type(self) -> str:
@@ -75,9 +126,22 @@ class ParakeetService(SpeechToText):
         return self._model_type
     
     def ensure_model_loaded(self) -> bool:
-        """Ensure the model is loaded."""
+        """Ensure the model is loaded and ready."""
         if self._model is None:
-            self._initialize_model()
+            try:
+                logger.info(f"Loading Parakeet model: {self._model_type}")
+                
+                # Use the correct API for parakeet-mlx
+                import parakeet_mlx
+                self._model = parakeet_mlx.from_pretrained(self._model_type)
+                
+                logger.info(f"Successfully loaded Parakeet model: {self._model_type}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"Error loading Parakeet model: {e}")
+                return False
+        
         return True
     
     def get_available_models(self) -> List[str]:
@@ -167,7 +231,156 @@ class ParakeetService(SpeechToText):
     
     def cleanup(self):
         """Clean up resources."""
+        if self._streaming_transcriber:
+            try:
+                self._streaming_transcriber.__exit__(None, None, None)
+            except:
+                pass
+            self._streaming_transcriber = None
         if self._model:
             del self._model
             self._model = None
-        logger.info("Parakeet service cleaned up") 
+        logger.info("Parakeet service cleaned up")
+    
+    def start_streaming(self) -> bool:
+        """Start high-accuracy pseudo-streaming mode using regular transcription API."""
+        try:
+            # Ensure model is loaded
+            self.ensure_model_loaded()
+            
+            # Reset state for new session
+            self._audio_buffer = []
+            self._last_processed_words = set()
+            self._last_finalized_text = ""
+            self._word_count = 0
+            
+            logger.info("Started high-accuracy pseudo-streaming using regular transcription API")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to start pseudo-streaming: {e}")
+            return False
+    
+    def stop_streaming(self) -> bool:
+        """Stop pseudo-streaming mode."""
+        try:
+            # Clear buffers
+            self._audio_buffer = []
+            self._last_processed_words = set()
+            self._last_finalized_text = ""
+            
+            logger.info("Stopped pseudo-streaming mode")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error stopping pseudo-streaming: {e}")
+            return False
+    
+    def process_streaming_audio(self, audio_chunk: np.ndarray) -> dict:
+        """Process audio using intelligent buffering with regular transcription API for high accuracy."""
+        try:
+            logger.debug(f"Processing audio chunk: shape={audio_chunk.shape}, dtype={audio_chunk.dtype}")
+            
+            # Ensure audio is in the right format (float32, normalized)
+            if audio_chunk.dtype != np.float32:
+                audio_chunk = audio_chunk.astype(np.float32)
+                logger.debug("Converted audio to float32")
+            
+            # Normalize if needed
+            if np.max(np.abs(audio_chunk)) > 1.0:
+                audio_chunk = audio_chunk / np.max(np.abs(audio_chunk))
+                logger.debug("Normalized audio amplitudes")
+            
+            # Add to buffer (accumulate small real-time chunks)
+            self._audio_buffer.extend(audio_chunk.tolist())
+            
+            # Calculate buffer duration
+            buffer_duration_ms = (len(self._audio_buffer) / self._target_sample_rate) * 1000
+            logger.debug(f"Audio buffer: {len(self._audio_buffer)} samples ({buffer_duration_ms:.1f}ms)")
+            
+            # Only process when we have sufficient audio for high accuracy
+            if buffer_duration_ms >= self._min_process_ms:
+                # Use regular transcription API for high accuracy
+                result_text = self._transcribe_buffer_with_regular_api()
+                
+                if result_text:
+                    # Extract only NEW words to simulate streaming
+                    new_words = self._extract_truly_new_words(result_text)
+                    
+                    if new_words:
+                        logger.info(f"New words detected: {new_words}")
+                        
+                        # Update tracking
+                        current_words = set(result_text.lower().split())
+                        self._last_processed_words.update(current_words)
+                        self._last_finalized_text = result_text
+                        
+                        # Keep overlap for context continuity
+                        overlap_samples = int((self._overlap_duration_ms / 1000) * self._target_sample_rate)
+                        if len(self._audio_buffer) > overlap_samples:
+                            self._audio_buffer = self._audio_buffer[-overlap_samples:]
+                        
+                        return {
+                            "partial_text": result_text,
+                            "finalized_text": result_text,
+                            "new_words": new_words
+                        }
+                    else:
+                        # No new words, trim buffer more aggressively
+                        trim_samples = int((self._min_process_ms / 2 / 1000) * self._target_sample_rate)
+                        if len(self._audio_buffer) > trim_samples:
+                            self._audio_buffer = self._audio_buffer[trim_samples:]
+                
+            # Not ready to process yet or no new words
+            return {"partial_text": "", "finalized_text": "", "new_words": []}
+            
+        except Exception as e:
+            logger.error(f"Error processing streaming audio: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return {"partial_text": "", "finalized_text": "", "new_words": []}
+    
+    def _transcribe_buffer_with_regular_api(self) -> str:
+        """Transcribe current buffer using regular API for high accuracy."""
+        try:
+            # Save buffer to temporary file
+            import tempfile
+            import soundfile as sf
+            
+            buffer_audio = np.array(self._audio_buffer, dtype=np.float32)
+            
+            with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+                sf.write(temp_file.name, buffer_audio, self._target_sample_rate)
+                
+                # Use regular transcription API
+                self.ensure_model_loaded()
+                result = self._model.transcribe(temp_file.name)
+                
+                # Clean up
+                import os
+                os.unlink(temp_file.name)
+                
+                if hasattr(result, 'text'):
+                    return result.text.strip()
+                else:
+                    return str(result).strip()
+                    
+        except Exception as e:
+            logger.error(f"Error in regular API transcription: {e}")
+            return ""
+    
+    def _extract_truly_new_words(self, current_text: str) -> list:
+        """Extract words that are truly new compared to previous transcriptions."""
+        if not current_text:
+            return []
+        
+        current_words = set(word.lower() for word in current_text.split())
+        new_words = current_words - self._last_processed_words
+        
+        # Return in order they appear in text
+        ordered_new_words = []
+        text_words = current_text.lower().split()
+        for word in text_words:
+            if word in new_words and word not in ordered_new_words:
+                ordered_new_words.append(word)
+        
+        return ordered_new_words 

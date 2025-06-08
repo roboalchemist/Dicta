@@ -39,6 +39,12 @@ if ! brew list portaudio &> /dev/null; then
     brew install portaudio
 fi
 
+# Install gfortran if not installed (required for SciPy)
+if ! brew list gcc &> /dev/null; then
+    echo "Installing GCC with gfortran (required for SciPy)..."
+    brew install gfortran
+fi
+
 # Check if uv is installed
 if ! command -v uv &> /dev/null; then
     echo "Installing uv..."
@@ -55,6 +61,9 @@ fi
 
 # Ensure uv is in PATH
 export PATH="$HOME/.local/bin:$PATH"
+
+# Add gfortran library path for scipy
+export DYLD_LIBRARY_PATH="/opt/homebrew/lib/gcc/current:$DYLD_LIBRARY_PATH"
 
 # Remove any existing virtual environment to ensure clean state
 if [ -d ".venv" ]; then

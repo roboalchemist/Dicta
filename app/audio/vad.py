@@ -30,7 +30,7 @@ class VADManager(QObject):
                  silence_threshold: int = 10,
                  speech_threshold: int = 3,
                  sampling_rate: int = 16000,
-                 pre_buffer: float = 0.3,
+                 pre_buffer: float = 1.0,
                  post_buffer: float = 0.2,
                  parent=None):
         """Initialize the VAD manager.
@@ -40,7 +40,7 @@ class VADManager(QObject):
             silence_threshold: Number of consecutive silence frames to trigger silence
             speech_threshold: Number of consecutive speech frames to trigger speech
             sampling_rate: Audio sampling rate (default: 16000)
-            pre_buffer: Seconds of audio to keep before speech is detected (default: 0.3)
+            pre_buffer: Seconds of audio to keep before speech is detected (default: 1.0)
             post_buffer: Seconds of audio to keep after speech ends (default: 0.2)
         """
         super().__init__(parent)

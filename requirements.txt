@@ -31,4 +31,5 @@ git+https://github.com/snakers4/silero-vad
 parakeet-mlx>=0.1.0
 groq==0.26.0
 SpeechRecognition==3.14.3
-openai-whisper==20240930 
+openai-whisper==20240930
+requests>=2.31.0 

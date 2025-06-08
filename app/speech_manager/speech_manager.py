@@ -12,6 +12,7 @@ from app.audio import AudioService
 from app.audio.vad import VADManager
 from app.typing.text_typer import TextTyper
 from app.config import config
+from app.ollama import OllamaService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,7 @@ class TypingThread(QThread):
         """Initialize typing thread."""
         super().__init__(parent)
         self.text_queue = deque()
+        self.word_queue = deque()  # High priority queue for individual words
         self.running = True
         self.text_typer = TextTyper()
         
@@ -35,17 +37,32 @@ class TypingThread(QThread):
         if not self.isRunning():
             self.start()
     
+    def enqueue_word(self, word: str):
+        """Add word to high priority word queue for immediate typing."""
+        self.word_queue.append(word)
+        if not self.isRunning():
+            self.start()
+    
     def run(self):
-        """Process text in the queue."""
+        """Process text in the queue with priority for words."""
         while self.running:
-            if self.text_queue:
+            # Process words first (high priority)
+            if self.word_queue:
+                word = self.word_queue.popleft()
+                self.typing_started.emit()
+                self.status_changed.emit("Typing word")
+                self.text_typer.type_text(word)
+                self.typing_finished.emit()
+            # Then process regular text
+            elif self.text_queue:
                 text = self.text_queue.popleft()
                 self.typing_started.emit()
                 self.status_changed.emit("Typing")
                 self.text_typer.type_text(text)
                 self.typing_finished.emit()
                 self.status_changed.emit("Listening")
-            self.msleep(100)  # Sleep to prevent busy waiting
+            else:
+                self.msleep(50)  # Sleep to prevent busy waiting
     
     def stop(self):
         """Stop the typing thread."""
@@ -56,6 +73,8 @@ class SpeechThread(QThread):
     """Thread for handling speech processing and transcription."""
     
     transcription_ready = pyqtSignal(str)
+    partial_transcription = pyqtSignal(str)  # New signal for streaming partial results
+    word_transcribed = pyqtSignal(str)  # New signal for individual words
     status_changed = pyqtSignal(str)
     level_changed = pyqtSignal(int)
     model_loaded = pyqtSignal()
@@ -86,7 +105,7 @@ class SpeechThread(QThread):
         self.vad.speech_ended.connect(self.on_speech_ended)
         
         # Initialize buffers with configurable sizes
-        self.pre_buffer_duration = config.get("vad_pre_buffer", 0.5)  # Default 0.5s
+        self.pre_buffer_duration = config.get("vad_pre_buffer", 1.0)  # Default 1.0s
         self.post_buffer_duration = config.get("vad_post_buffer", 0.2)  # Default 0.2s
         self.sample_rate = config.get("vad_sampling_rate", 16000)
         
@@ -104,6 +123,10 @@ class SpeechThread(QThread):
         self.running = True
         self.pending_auto_listen = False
         
+        # Streaming mode tracking
+        self.is_streaming_mode = False
+        self.streaming_enabled = False
+        
         # Load settings
         self.load_settings()
         
@@ -120,7 +143,7 @@ class SpeechThread(QThread):
             vad_sampling_rate = config.get("vad_sampling_rate", 16000)
             
             # Load buffer settings
-            self.pre_buffer_duration = config.get("vad_pre_buffer", 0.5)
+            self.pre_buffer_duration = config.get("vad_pre_buffer", 1.0)
             self.post_buffer_duration = config.get("vad_post_buffer", 0.2)
             
             # Update buffer sizes
@@ -152,13 +175,15 @@ class SpeechThread(QThread):
             
             if transcription_engine == "parakeet":
                 # Use Parakeet service
-                parakeet_model = config.get("parakeet_model", "mlx-community/parakeet-tdt-0.6b-v2")
+                parakeet_model = config.get("parakeet_model", "mlx-community/parakeet-rnnt-0.6b")
                 logger.info(f"Loading Parakeet model {parakeet_model}")
                 self.speech_service = ParakeetService(parakeet_model)
+                self.streaming_enabled = True  # Enable streaming for Parakeet
             else:
                 # Use Whisper service (default)
                 logger.info(f"Loading Whisper model {self.model_type}")
                 self.speech_service = WhisperService(self.model_type)
+                self.streaming_enabled = False  # Whisper uses non-streaming mode
             
             if self.speech_service.ensure_model_loaded():
                 logger.info(f"Model loaded successfully ({transcription_engine})")
@@ -190,6 +215,15 @@ class SpeechThread(QThread):
                     self.pending_auto_listen = True
                     return
                 
+                # Start streaming mode if enabled
+                if self.streaming_enabled and hasattr(self.speech_service, 'start_streaming'):
+                    if self.speech_service.start_streaming():
+                        self.is_streaming_mode = True
+                        logger.info("Started streaming mode")
+                    else:
+                        logger.warning("Failed to start streaming mode, falling back to non-streaming")
+                        self.is_streaming_mode = False
+                
                 self.audio_service.set_audio_callback(self.on_audio_data)
                 self.audio_service.start_recording()
                 self.is_listening = True
@@ -205,15 +239,22 @@ class SpeechThread(QThread):
             try:
                 self.audio_service.stop_recording()
                 self.is_listening = False
+                
+                # Stop streaming mode if active
+                if self.is_streaming_mode and hasattr(self.speech_service, 'stop_streaming'):
+                    self.speech_service.stop_streaming()
+                    self.is_streaming_mode = False
+                    logger.info("Stopped streaming mode")
+                
+                self.status_changed.emit("Not Listening")
+                logger.info("Stopped listening")
+                
+                # Reset state
                 self.is_speech_active = False
                 self.is_post_buffer_active = False
-                self.level = 0
-                self.rolling_buffer.clear()
-                self.active_buffer.clear()
-                self.post_buffer.clear()
-                self.status_changed.emit("Stopped")
-                self.level_changed.emit(0)
-                logger.info("Stopped listening")
+                self.active_buffer = []
+                self.post_buffer = []
+                
             except Exception as e:
                 logger.error(f"Error stopping listening: {e}")
                 self.error_occurred.emit(str(e))
@@ -265,15 +306,18 @@ class SpeechThread(QThread):
                 self.vad.process_frame(frame_data)
                 logger.debug("Processed complete VAD frame")
             
+            # Skip streaming processing - we want to wait for complete speech
+            # This allows VAD to work naturally without interference
+            
             # Buffer management based on state
             if not self.is_speech_active and not self.is_post_buffer_active:
                 # Keep filling rolling buffer for pre-speech context
                 self.rolling_buffer.extend(audio_data)
             elif self.is_speech_active:
-                # Collect active speech
+                # Collect active speech for final transcription (both streaming and non-streaming modes)
                 self.active_buffer.extend(audio_data)
             elif self.is_post_buffer_active:
-                # Collect post-speech context
+                # Collect post-speech context for final transcription (both streaming and non-streaming modes)
                 self.post_buffer.extend(audio_data)
                 if len(self.post_buffer) >= int(self.post_buffer_duration * self.sample_rate):
                     self.process_post_buffer()
@@ -339,6 +383,8 @@ class SpeechManager(QObject):
     """Manages speech recognition and transcription."""
     
     transcription_ready = pyqtSignal(str)
+    partial_transcription = pyqtSignal(str)  # New signal for partial results
+    word_transcribed = pyqtSignal(str)  # New signal for individual words
     status_changed = pyqtSignal(str)
     level_changed = pyqtSignal(int)
     model_loaded = pyqtSignal()
@@ -357,8 +403,13 @@ class SpeechManager(QObject):
         self.speech_thread = SpeechThread(model_size)
         self.typing_thread = TypingThread()
         
+        # Initialize Ollama correction service
+        self.correction_service = OllamaService()
+        
         # Connect signals from speech thread
         self.speech_thread.transcription_ready.connect(self.on_transcription_ready)
+        self.speech_thread.partial_transcription.connect(self.partial_transcription.emit)
+        self.speech_thread.word_transcribed.connect(self.on_word_transcribed)
         self.speech_thread.status_changed.connect(self.status_changed.emit)
         self.speech_thread.level_changed.connect(self.level_changed.emit)
         self.speech_thread.model_loaded.connect(self.model_loaded.emit)
@@ -381,10 +432,40 @@ class SpeechManager(QObject):
     
     def on_transcription_ready(self, text: str):
         """Handle transcribed text by sending it to the typing thread."""
-        # Log the exact text we're sending to the typing thread
-        logger.info(f"Sending text to typing thread (raw): {text}")
+        # Log the exact text we're receiving
+        logger.info(f"Received transcribed text (raw): {text}")
+        
+        # Check if AI correction is enabled
+        if config.get("ollama_correction_enabled", True):
+            try:
+                # Try to correct the text with Ollama
+                corrected_text = self.correction_service.correct_text(text)
+                if corrected_text and corrected_text != text:
+                    logger.info(f"Text corrected by MLX: '{text}' → '{corrected_text}'")
+                    text = corrected_text
+                else:
+                    logger.debug("MLX correction returned same text or failed, using original")
+            except Exception as e:
+                logger.error(f"Error with MLX correction: {e}")
+                # Continue with original text if MLX fails
+        
+        # Add a space after the sentence for proper separation
+        if text and not text.endswith(' '):
+            text += ' '
+        
+        # Log the final text we're sending to the typing thread
+        logger.info(f"Sending text to typing thread (final): {text}")
         self.transcription_ready.emit(text)  # Emit for UI updates
         self.typing_thread.enqueue_text(text)  # Send to typing thread
+    
+    def on_word_transcribed(self, word: str):
+        """Handle individual word transcription for streaming mode."""
+        logger.info(f"Word transcribed: {word}")
+        self.word_transcribed.emit(word)  # Emit for UI updates
+        
+        # Type the text as a batch using regular text queue (avoids clipboard race conditions)
+        if word.strip():
+            self.typing_thread.enqueue_text(word)
     
     @property
     def model_type(self) -> str:
@@ -407,7 +488,7 @@ class SpeechManager(QObject):
             vad_silence_threshold = config.get("vad_silence_threshold", 10)
             vad_speech_threshold = config.get("vad_speech_threshold", 3)
             vad_sampling_rate = config.get("vad_sampling_rate", 16000)
-            vad_pre_buffer = config.get("vad_pre_buffer", 0.5)
+            vad_pre_buffer = config.get("vad_pre_buffer", 1.0)
             vad_post_buffer = config.get("vad_post_buffer", 0.2)
             
             # Update VAD settings in speech thread
@@ -442,4 +523,6 @@ class SpeechManager(QObject):
         if self.typing_thread:
             self.typing_thread.stop()
             self.typing_thread.wait()
+        if hasattr(self, 'correction_service'):
+            self.correction_service.cleanup()
         logger.info("Speech manager cleaned up") 

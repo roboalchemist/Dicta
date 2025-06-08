@@ -66,6 +66,9 @@ class MenuBarApp(QObject):
         self.setup_settings_dialog()
         self.setup_tray_icon()  # Move this after settings dialog setup
         
+        # Check Ollama availability if correction is enabled
+        self.check_ollama_availability()
+        
         # Let the speech manager handle auto-listen
         # Don't start listening here - it will be handled after model loads
         logger.info("MenuBarApp initialized")
@@ -134,6 +137,13 @@ class MenuBarApp(QObject):
         self.auto_listen_action.setChecked(config.get("auto_listen", True))
         self.auto_listen_action.triggered.connect(self.toggle_auto_listen)
         menu.addAction(self.auto_listen_action)
+        
+        # Add AI correction setting
+        self.ai_correction_action = QAction("AI Text Correction (Ollama)", self)
+        self.ai_correction_action.setCheckable(True)
+        self.ai_correction_action.setChecked(config.get("ollama_correction_enabled", True))
+        self.ai_correction_action.triggered.connect(self.toggle_ai_correction)
+        menu.addAction(self.ai_correction_action)
         menu.addSeparator()
         
         # Add model selection submenu
@@ -310,7 +320,8 @@ class MenuBarApp(QObject):
                 model = model.split("/")[-1]
         
         auto_start = "Will listen on startup" if config.get("auto_listen", True) else "Manual start only"
-        self.tray_icon.setToolTip(f"Dicta - {status}\nEngine: {engine}\nModel: {model}\n{auto_start}")
+        ai_status = "AI correction ON" if config.get("ollama_correction_enabled", True) else "AI correction OFF"
+        self.tray_icon.setToolTip(f"Dicta - {status}\nEngine: {engine}\nModel: {model}\n{auto_start}\n{ai_status}")
     
     def update_status(self, status: str):
         """Update the application status."""
@@ -400,6 +411,13 @@ class MenuBarApp(QObject):
         config.save()
         logger.info(f"Listen on startup {'enabled' if checked else 'disabled'}")
         self.update_tooltip()
+    
+    def toggle_ai_correction(self, checked):
+        """Toggle whether MLX AI text correction is enabled."""
+        config.set("ollama_correction_enabled", checked)
+        config.save()
+        logger.info(f"Ollama AI text correction {'enabled' if checked else 'disabled'}")
+        self.update_tooltip()
 
     def update_listening_state(self):
         """Update UI elements to reflect current listening state."""
@@ -481,4 +499,27 @@ class MenuBarApp(QObject):
                 f"Failed to switch engine: {e}",
                 QSystemTrayIcon.MessageIcon.Critical,
                 2000
+            )
+    
+    def check_ollama_availability(self):
+        """Check if Ollama is available and warn if not."""
+        if not config.get("ollama_correction_enabled", True):
+            return  # Skip check if correction is disabled
+            
+        try:
+            from app.ollama import OllamaService
+            ollama_service = OllamaService()
+            
+            # Ollama availability check will happen when first used
+            # We can just log that the service is initialized
+            logger.info("Ollama correction service initialized")
+            
+        except Exception as e:
+            logger.error(f"Error initializing Ollama correction service: {e}")
+            self.tray_icon.showMessage(
+                "Ollama Initialization Failed",
+                f"Could not initialize Ollama correction service: {e}\n"
+                "AI text correction may not work properly.",
+                QSystemTrayIcon.MessageIcon.Warning,
+                3000
             ) 
