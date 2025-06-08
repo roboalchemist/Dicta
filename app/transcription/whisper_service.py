@@ -5,7 +5,6 @@ import logging
 import soundfile as sf
 import tempfile
 from typing import Optional, List
-from lightning_whisper_mlx import LightningWhisperMLX
 import os
 from groq import Groq
 import time
@@ -74,7 +73,7 @@ class WhisperService(SpeechToText):
             self._model = None
             self._groq_client = None
             logger.info(f"Model type changed to {model_type}")
-            self._initialize_model()
+            # Don't initialize model here - do it lazily when needed
     
     def _initialize_model(self):
         """Initialize the appropriate model."""
@@ -84,6 +83,8 @@ class WhisperService(SpeechToText):
                 self._groq_client = Groq()
             else:
                 logger.info(f"Loading MLX Whisper model: {self._model_type}")
+                # Lazy import lightning_whisper_mlx only when needed
+                from lightning_whisper_mlx import LightningWhisperMLX
                 # Increase batch size for better throughput on Apple Silicon
                 self._model = LightningWhisperMLX(
                     model=self._model_type,

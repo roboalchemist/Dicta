@@ -1,10 +1,11 @@
 """Text typing functionality for Dicta."""
 
 import logging
-import keyboard
 import time
 from typing import Dict, Optional
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, QTimer, QCoreApplication
+from PyQt6.QtGui import QClipboard
+from PyQt6.QtWidgets import QApplication
 
 from app.config import config
 from app.desktop_ui.command_mapper import CommandMapper
@@ -19,6 +20,10 @@ class TextTyper(QObject):
     typing_finished = pyqtSignal()
     command_executed = pyqtSignal(str)  # Emits the command that was executed
     
+    # Internal signals for main thread execution
+    _type_text_signal = pyqtSignal(str)
+    _execute_command_signal = pyqtSignal(str)
+    
     def __init__(self, command_mapper: Optional[CommandMapper] = None, parent: Optional[QObject] = None):
         """Initialize the text typer.
         
@@ -30,7 +35,108 @@ class TextTyper(QObject):
         self.command_mapper = command_mapper or CommandMapper()
         self.typing_speed = config.get("typing_speed", 0.01)  # seconds between characters
         self.commands = self.command_mapper.get_commands()
+        
+        # Connect internal signals to main thread methods
+        self._type_text_signal.connect(self._type_text_on_main_thread)
+        self._execute_command_signal.connect(self._execute_command_on_main_thread)
+        
         logger.info(f"Initialized TextTyper with {len(self.commands)} commands")
+    
+    def _type_text_on_main_thread(self, text: str):
+        """Type text on the main thread using clipboard simulation.
+        
+        Args:
+            text: Text to type
+        """
+        try:
+            logger.info(f"Typing text on main thread: {text}")
+            
+            # Get the application clipboard
+            app = QApplication.instance()
+            if app is None:
+                logger.error("No QApplication instance found")
+                return
+                
+            clipboard = app.clipboard()
+            
+            # Save current clipboard content
+            original_content = clipboard.text()
+            
+            # Set our text to clipboard
+            clipboard.setText(text)
+            
+            # Simulate Cmd+V to paste the text
+            # This is much more reliable than trying to simulate individual keystrokes
+            import subprocess
+            try:
+                # Use osascript (AppleScript) to send Cmd+V 
+                subprocess.run([
+                    'osascript', '-e', 
+                    'tell application "System Events" to keystroke "v" using command down'
+                ], check=True, capture_output=True)
+                
+                logger.info(f"Successfully typed text via clipboard: {text}")
+                
+                # Restore original clipboard content after a short delay
+                QTimer.singleShot(100, lambda: clipboard.setText(original_content))
+                
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Failed to execute paste command: {e}")
+                # Restore clipboard immediately if paste failed
+                clipboard.setText(original_content)
+                
+        except Exception as e:
+            logger.error(f"Error typing text on main thread: {e}")
+    
+    def _execute_command_on_main_thread(self, command: str):
+        """Execute a command on the main thread.
+        
+        Args:
+            command: The command to execute
+        """
+        try:
+            key = self.commands.get(command)
+            if key:
+                logger.info(f"Executing command on main thread: {command} -> {key}")
+                
+                # Use osascript to send the key press
+                import subprocess
+                
+                # Map our key names to AppleScript key codes
+                applescript_keys = {
+                    'escape': 'key code 53',
+                    'enter': 'key code 36', 
+                    'return': 'key code 36',
+                    'tab': 'key code 48',
+                    'space': 'key code 49',
+                    'up': 'key code 126',
+                    'down': 'key code 125', 
+                    'left': 'key code 123',
+                    'right': 'key code 124',
+                    'backspace': 'key code 51',
+                    'delete': 'key code 117',
+                }
+                
+                applescript_key = applescript_keys.get(key.lower())
+                if applescript_key:
+                    try:
+                        subprocess.run([
+                            'osascript', '-e',
+                            f'tell application "System Events" to {applescript_key}'
+                        ], check=True, capture_output=True)
+                        
+                        self.command_executed.emit(command)
+                        logger.info(f"Successfully executed command: {command}")
+                        
+                    except subprocess.CalledProcessError as e:
+                        logger.error(f"Failed to execute command: {e}")
+                else:
+                    logger.warning(f"Unknown key for command: {command} -> {key}")
+            else:
+                logger.warning(f"No key mapping found for command: {command}")
+                
+        except Exception as e:
+            logger.error(f"Error executing command on main thread: {e}")
     
     def type_text(self, text: str):
         """Type the given text.
@@ -43,12 +149,12 @@ class TextTyper(QObject):
             return
             
         try:
-            logger.info(f"Starting to type text (raw): {text}")
+            logger.info(f"Starting to type text: {text}")
             self.typing_started.emit()
             
             # Split text into words but preserve original case
             words = text.split()
-            logger.debug(f"Split text into {len(words)} words (raw): {words}")
+            logger.debug(f"Split text into {len(words)} words: {words}")
             
             import string
             
@@ -61,59 +167,22 @@ class TextTyper(QObject):
                 # Check if cleaned word is a command
                 if cleaned_word in self.commands:
                     logger.info(f"Found single-word command: {cleaned_word} -> {self.commands[cleaned_word]}")
-                    self._execute_command(cleaned_word)
+                    # Execute command on main thread
+                    self._execute_command_signal.emit(cleaned_word)
                     self.typing_finished.emit()
                     return
             
             # If not a single-word command, type the entire text normally
-            for word in words:
-                logger.debug(f"Typing word (raw): {word}")
-                # Type the original word character by character, preserving case and punctuation
-                self._type_word(word)
-                # Add space after word
-                logger.debug("Adding space after word")
-                keyboard.write(" ")
-                time.sleep(self.typing_speed)
+            full_text = " ".join(words)
+            # Type text on main thread
+            self._type_text_signal.emit(full_text)
             
             self.typing_finished.emit()
-            logger.info(f"Finished typing text (raw): {text}")
+            logger.info(f"Finished typing text: {text}")
             
         except Exception as e:
             logger.error(f"Error typing text: {e}", exc_info=True)
             self.typing_finished.emit()
-    
-    def _type_word(self, word: str):
-        """Type a single word character by character, preserving case.
-        
-        Args:
-            word: The word to type
-        """
-        try:
-            for char in word:
-                logger.debug(f"Typing character (raw): {char}")
-                keyboard.write(char)
-                time.sleep(self.typing_speed)
-        except Exception as e:
-            logger.error(f"Error typing word '{word}': {e}", exc_info=True)
-    
-    def _execute_command(self, command: str):
-        """Execute a keyboard command.
-        
-        Args:
-            command: The command to execute
-        """
-        try:
-            key = self.commands.get(command)
-            if key:
-                logger.info(f"Executing command: {command} -> {key}")
-                keyboard.press_and_release(key)
-                self.command_executed.emit(command)
-                logger.debug(f"Successfully executed command: {command}")
-                time.sleep(self.typing_speed * 2)  # Slightly longer pause after commands
-            else:
-                logger.warning(f"No key mapping found for command: {command}")
-        except Exception as e:
-            logger.error(f"Error executing command {command}: {e}", exc_info=True)
     
     def set_typing_speed(self, speed: float):
         """Set the typing speed in seconds between characters.

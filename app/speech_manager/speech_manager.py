@@ -86,7 +86,7 @@ class SpeechThread(QThread):
         self.vad.speech_ended.connect(self.on_speech_ended)
         
         # Initialize buffers with configurable sizes
-        self.pre_buffer_duration = config.get("vad_pre_buffer", 0.3)  # Default 0.3s
+        self.pre_buffer_duration = config.get("vad_pre_buffer", 0.5)  # Default 0.5s
         self.post_buffer_duration = config.get("vad_post_buffer", 0.2)  # Default 0.2s
         self.sample_rate = config.get("vad_sampling_rate", 16000)
         
@@ -120,7 +120,7 @@ class SpeechThread(QThread):
             vad_sampling_rate = config.get("vad_sampling_rate", 16000)
             
             # Load buffer settings
-            self.pre_buffer_duration = config.get("vad_pre_buffer", 0.3)
+            self.pre_buffer_duration = config.get("vad_pre_buffer", 0.5)
             self.post_buffer_duration = config.get("vad_post_buffer", 0.2)
             
             # Update buffer sizes
@@ -397,7 +397,7 @@ class SpeechManager(QObject):
             vad_silence_threshold = config.get("vad_silence_threshold", 10)
             vad_speech_threshold = config.get("vad_speech_threshold", 3)
             vad_sampling_rate = config.get("vad_sampling_rate", 16000)
-            vad_pre_buffer = config.get("vad_pre_buffer", 0.3)
+            vad_pre_buffer = config.get("vad_pre_buffer", 0.5)
             vad_post_buffer = config.get("vad_post_buffer", 0.2)
             
             # Update VAD settings in speech thread

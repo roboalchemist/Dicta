@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
     "vad_silence_threshold": 10,  # Number of silence frames to trigger silence
     "vad_speech_threshold": 3,  # Number of speech frames to trigger speech
     "vad_sampling_rate": 16000,  # Audio sampling rate for VAD
-    "vad_pre_buffer": 0.3,  # Seconds of audio to keep before speech
+    "vad_pre_buffer": 0.5,  # Seconds of audio to keep before speech
     "vad_post_buffer": 0.2,  # Seconds of audio to keep after speech
     "notification_duration": 2000,  # Duration of notifications in milliseconds
     "typing_speed": 0.01,  # Seconds between typed characters

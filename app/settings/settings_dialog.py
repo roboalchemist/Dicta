@@ -349,7 +349,7 @@ class SettingsDialog(QDialog):
         self.pre_buffer.setRange(0.0, 2.0)
         self.pre_buffer.setSingleStep(0.1)
         self.pre_buffer.setSuffix(" sec")
-        self.pre_buffer.setValue(self.config.get("vad_pre_buffer", 0.3))
+        self.pre_buffer.setValue(self.config.get("vad_pre_buffer", 0.5))
         self.pre_buffer.setToolTip("Seconds of audio to keep before speech is detected")
         self.pre_buffer.valueChanged.connect(
             lambda value: self.config.set("vad_pre_buffer", value)
@@ -469,7 +469,7 @@ class SettingsDialog(QDialog):
         self.pre_buffer.setRange(0.0, 2.0)
         self.pre_buffer.setSingleStep(0.1)
         self.pre_buffer.setSuffix(" sec")
-        self.pre_buffer.setValue(self.config.get("vad_pre_buffer", 0.3))
+        self.pre_buffer.setValue(self.config.get("vad_pre_buffer", 0.5))
         self.pre_buffer.setToolTip("Seconds of audio to keep before speech is detected")
         vad_layout.addRow("Pre-buffer:", self.pre_buffer)
         

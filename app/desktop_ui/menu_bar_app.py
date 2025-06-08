@@ -3,7 +3,7 @@
 import logging
 from pathlib import Path
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QMessageBox
-from PyQt6.QtGui import QIcon, QAction, QActionGroup
+from PyQt6.QtGui import QIcon, QAction, QActionGroup, QPixmap, QPainter, QFont, QColor
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QObject
 import numpy as np
 import sys
@@ -11,10 +11,10 @@ import os
 
 from app.speech import GroqWhisperService
 from app.transcription.whisper_service import WhisperService, WhisperModel
-from app.speech_manager import SpeechManager
+from app.speech_manager import SpeechManager  # Re-enabled - Core Foundation crash fixed
 from app.config import config
 from .settings_window import SettingsWindow
-from .command_list import CommandListWindow
+from .command_list import CommandListWindow  # Re-enabled - Core Foundation crash fixed
 from app.config import Config
 from app.settings.settings_dialog import SettingsDialog
 from app.audio import AudioService
@@ -57,7 +57,7 @@ class MenuBarApp(QObject):
         logger.info(f"Icon exists: {os.path.exists(self.mic_icon)}")
         
         # Initialize signal icon first
-        self.signal_icon = SignalIcon()
+        self.signal_icon = SignalIcon()  # Re-enabled - Core Foundation crash fixed
         
         # Initialize services
         self.initialize_services()
@@ -92,10 +92,30 @@ class MenuBarApp(QObject):
             QMessageBox.critical(None, "Error", f"Failed to initialize services: {e}")
             sys.exit(1)
     
+    def create_loading_icon(self):
+        """Create a loading icon to show while the model is loading."""
+        pixmap = QPixmap(44, 44)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw a simple loading indicator (spinning dots or clock symbol)
+        painter.setFont(QFont("Arial", 32))
+        painter.setPen(QColor(128, 128, 128))  # Grey color for loading
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "⏳")
+        
+        painter.end()
+        return QIcon(pixmap)
+
     def setup_tray_icon(self):
         """Set up the system tray icon and menu."""
         # Create tray icon
         self.tray_icon = QSystemTrayIcon(self)
+        
+        # Set loading icon immediately
+        self.tray_icon.setIcon(self.create_loading_icon())
+        self.tray_icon.setToolTip("Dicta - Loading model...")
+        self.tray_icon.show()  # Show immediately with loading icon
         
         # Create context menu
         menu = QMenu()
@@ -104,6 +124,7 @@ class MenuBarApp(QObject):
         self.listen_action = QAction("Start Listening", self)
         self.listen_action.setCheckable(True)
         self.listen_action.setChecked(False)  # Always start unchecked until model loads
+        self.listen_action.setEnabled(False)  # Disabled until model loads
         self.listen_action.triggered.connect(self.toggle_listening)
         menu.addAction(self.listen_action)
         
@@ -130,9 +151,6 @@ class MenuBarApp(QObject):
         
         # Set up tray icon
         self.tray_icon.setContextMenu(menu)
-        self.update_icon_state()
-        self.update_tooltip()
-        self.tray_icon.show()
     
     def setup_model_menu(self, model_menu):
         """Set up the model selection submenu."""
@@ -238,14 +256,60 @@ class MenuBarApp(QObject):
     
     def update_icon_state(self):
         """Update the tray icon based on current speech manager state."""
-        if hasattr(self, 'speech_manager') and self.speech_manager.speech_thread.is_listening:
-            self.update_icon_level(0)  # Start with level 0
-        else:
-            # Check if icon file exists
-            if not os.path.exists(self.mic_icon):
-                logger.error(f"Icon not found: {self.mic_icon}")
-                return
-            self.tray_icon.setIcon(QIcon(self.mic_icon))
+        try:
+            if hasattr(self, 'speech_manager') and self.speech_manager.speech_thread.is_listening:
+                self.update_icon_level(0)  # Start with level 0
+            else:
+                # Check if icon file exists and is valid
+                if not os.path.exists(self.mic_icon):
+                    logger.error(f"Icon not found: {self.mic_icon}")
+                    # Create a fallback icon with text
+                    pixmap = QPixmap(44, 44)
+                    pixmap.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(pixmap)
+                    painter.setFont(QFont("Arial", 24))
+                    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "🎤")
+                    painter.end()
+                    self.tray_icon.setIcon(QIcon(pixmap))
+                    return
+                    
+                if os.path.getsize(self.mic_icon) == 0:
+                    logger.error(f"Icon file is empty: {self.mic_icon}")
+                    # Use text fallback
+                    pixmap = QPixmap(44, 44)
+                    pixmap.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(pixmap)
+                    painter.setFont(QFont("Arial", 24))
+                    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "🎤")
+                    painter.end()
+                    self.tray_icon.setIcon(QIcon(pixmap))
+                    return
+                    
+                # Load the icon
+                icon = QIcon(self.mic_icon)
+                if icon.isNull():
+                    logger.error(f"Failed to load icon: {self.mic_icon}")
+                    # Use text fallback
+                    pixmap = QPixmap(44, 44)
+                    pixmap.fill(Qt.GlobalColor.transparent)
+                    painter = QPainter(pixmap)
+                    painter.setFont(QFont("Arial", 24))
+                    painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "🎤")
+                    painter.end()
+                    self.tray_icon.setIcon(QIcon(pixmap))
+                else:
+                    self.tray_icon.setIcon(icon)
+                    logger.debug("Successfully set microphone icon")
+                    
+        except Exception as e:
+            logger.error(f"Error updating icon state: {e}")
+            # Final fallback - try to show something
+            try:
+                pixmap = QPixmap(44, 44)
+                pixmap.fill(Qt.GlobalColor.red)
+                self.tray_icon.setIcon(QIcon(pixmap))
+            except:
+                pass
     
     def cleanup(self):
         """Clean up resources before quitting."""
@@ -281,6 +345,9 @@ class MenuBarApp(QObject):
     def on_model_loaded(self):
         """Handle model loaded event."""
         logger.info("Model loaded successfully")
+        
+        # Enable listening controls
+        self.listen_action.setEnabled(True)
         
         # Start listening if auto-listen is enabled
         if config.get("auto_listen", True):

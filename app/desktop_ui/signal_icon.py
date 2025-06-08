@@ -1,20 +1,20 @@
 """Signal icon generator for voice activity levels."""
 
-from PyQt6.QtGui import QPainter, QColor, QIcon, QPixmap
-from PyQt6.QtCore import Qt, QRect, QSize
+from PyQt6.QtGui import QIcon, QPixmap, QPainter, QBrush, QColor
+from PyQt6.QtCore import Qt
+import os
 
 class SignalIcon:
-    """Generates cellular-style signal bar icons for voice activity levels."""
+    """Generates signal bar icons for voice activity levels."""
     
-    def __init__(self, size: int = 22):  # Menu bar icons are typically 22x22
+    def __init__(self, size: int = 44):
         """Initialize the signal icon generator.
         
         Args:
             size: Size of the icon in pixels (both width and height)
         """
         self.size = size
-        self.active_color = QColor(0, 255, 0)  # Green for active bars
-        self.inactive_color = QColor(128, 128, 128, 60)  # Semi-transparent gray for inactive
+        self._icon_cache = {}  # Cache icons to avoid recreating them
         
     def generate(self, active_bars: int) -> QIcon:
         """Generate an icon with the specified number of active bars.
@@ -23,42 +23,62 @@ class SignalIcon:
             active_bars: Number of bars to show as active (0-4)
         
         Returns:
-            QIcon with the signal bars drawn
+            QIcon representing the signal level
         """
-        # Create pixmap
+        # Cache the icon to avoid recreating it every time
+        if active_bars in self._icon_cache:
+            return self._icon_cache[active_bars]
+            
+        # Create a pixmap
         pixmap = QPixmap(self.size, self.size)
         pixmap.fill(Qt.GlobalColor.transparent)
         
-        # Create painter
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Calculate bar dimensions
-        total_bars = 4
-        bar_width = self.size / (total_bars * 2)  # Leave space between bars
-        max_height = self.size - 4  # Leave some padding
+        # Define colors based on activity level
+        if active_bars == 0:
+            # No activity - dark gray (more visible)
+            active_color = QColor(60, 60, 60)  # Darker gray
+        elif active_bars <= 2:
+            # Low activity - red (waiting to hear voice)
+            active_color = QColor(255, 80, 80)  # Red
+        elif active_bars == 3:
+            # Medium activity - yellow (actively listening)
+            active_color = QColor(255, 200, 0)  # Yellow
+        else:
+            # High activity - green (processing/typing)
+            active_color = QColor(0, 200, 0)  # Green
         
-        # Draw bars from shortest to tallest
-        x = 2  # Start with some padding
-        for i in range(total_bars):
-            # Calculate bar height (each bar is taller than the previous)
-            height = max_height * ((i + 1) / total_bars)
+        inactive_color = QColor(255, 255, 255)  # White for inactive bars (modern macOS style)
+        
+        # Draw 4 signal bars
+        num_bars = 4
+        bar_width = int(self.size * 0.15)  # Make bars thicker
+        bar_spacing = int(self.size * 0.05)
+        total_width = (num_bars * bar_width) + ((num_bars - 1) * bar_spacing)
+        start_x = (self.size - total_width) // 2
+        
+        for i in range(num_bars):
+            # Calculate bar height (increasing from left to right)
+            bar_height = int(self.size * (0.3 + (i * 0.15)))  # 30%, 45%, 60%, 75% of icon size
             
-            # Calculate y position (align to bottom)
-            y = self.size - height - 2  # 2px padding from bottom
+            # Calculate position
+            bar_x = start_x + i * (bar_width + bar_spacing)
+            bar_y = self.size - bar_height - 2  # Leave small margin at bottom
             
-            # Determine if this bar should be active
-            is_active = i < active_bars
-            color = self.active_color if is_active else self.inactive_color
+            # Choose color based on whether this bar should be active
+            if i < active_bars:
+                color = active_color
+            else:
+                color = inactive_color
             
-            # Draw bar
-            painter.fillRect(
-                QRect(int(x), int(y), int(bar_width), int(height)),
-                color
-            )
-            
-            # Move to next bar position
-            x += bar_width * 1.5  # Add some space between bars
+            # Draw the bar
+            painter.fillRect(bar_x, bar_y, bar_width, bar_height, QBrush(color))
         
         painter.end()
-        return QIcon(pixmap) 
+        
+        # Create and cache the icon
+        icon = QIcon(pixmap)
+        self._icon_cache[active_bars] = icon
+        return icon 
