@@ -11,7 +11,9 @@ logger = logging.getLogger(__name__)
 # Default configuration
 DEFAULT_CONFIG = {
     "service": "MLX",  # MLX or Groq
-    "model_size": "large-v3",  # tiny, small, medium, large-v3
+    "transcription_engine": "whisper",  # whisper or parakeet
+    "model_size": "large-v3",  # For Whisper: tiny, small, medium, large-v3
+    "parakeet_model": "mlx-community/parakeet-rnnt-0.6b",  # For Parakeet models
     "hotkey": "ctrl+shift+space",
     "auto_listen": True,  # Enable auto-listening by default
     "vad_threshold": 0.5,  # VAD threshold (0-1)

@@ -7,7 +7,7 @@ from collections import deque
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal, QThread
 import time
 
-from app.transcription import SpeechToText, WhisperService
+from app.transcription import SpeechToText, WhisperService, ParakeetService
 from app.audio import AudioService
 from app.audio.vad import VADManager
 from app.typing.text_typer import TextTyper
@@ -147,11 +147,21 @@ class SpeechThread(QThread):
     def run(self):
         """Run the speech processing thread."""
         try:
-            # Initialize whisper service
-            logger.info(f"Loading model {self.model_type}")
-            self.speech_service = WhisperService(self.model_type)
+            # Determine which transcription engine to use
+            transcription_engine = config.get("transcription_engine", "whisper")
+            
+            if transcription_engine == "parakeet":
+                # Use Parakeet service
+                parakeet_model = config.get("parakeet_model", "mlx-community/parakeet-tdt-0.6b-v2")
+                logger.info(f"Loading Parakeet model {parakeet_model}")
+                self.speech_service = ParakeetService(parakeet_model)
+            else:
+                # Use Whisper service (default)
+                logger.info(f"Loading Whisper model {self.model_type}")
+                self.speech_service = WhisperService(self.model_type)
+            
             if self.speech_service.ensure_model_loaded():
-                logger.info("Model loaded successfully")
+                logger.info(f"Model loaded successfully ({transcription_engine})")
                 self.model_is_loaded = True
                 self.model_loaded.emit()
                 

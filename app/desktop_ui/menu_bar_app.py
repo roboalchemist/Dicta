@@ -140,6 +140,10 @@ class MenuBarApp(QObject):
         model_menu = menu.addMenu("Model")
         self.setup_model_menu(model_menu)
         
+        # Add transcription engine submenu
+        engine_menu = menu.addMenu("Engine")
+        self.setup_engine_menu(engine_menu)
+        
         # Add settings and quit options
         settings_action = QAction("Settings", self)
         settings_action.triggered.connect(self.show_settings)
@@ -155,29 +159,46 @@ class MenuBarApp(QObject):
     def setup_model_menu(self, model_menu):
         """Set up the model selection submenu."""
         try:
-            # Get current model type
-            current_model = config.get("model_size", "large-v3")
+            # Get current transcription engine and model
+            current_engine = config.get("transcription_engine", "whisper")
+            current_model = config.get("model_size", "large-v3") if current_engine == "whisper" else config.get("parakeet_model", "mlx-community/parakeet-rnnt-0.6b")
             
-            # Create model list from WhisperModel enum
-            available_models = [
-                ("tiny", "Tiny"),
-                ("base", "Base"),
-                ("distil-small.en", "Small English"),
-                ("small", "Small"),
-                ("distil-medium.en", "Medium English"),
-                ("medium", "Medium"),
-                ("distil-large-v3", "Large v3 English"),
-                ("large-v3", "Large v3"),
-                ("whisper-1", "GROQ Whisper")
-            ]
-            
-            # Add model actions
-            for model_id, display_name in available_models:
-                action = QAction(display_name, self)
-                action.setCheckable(True)
-                action.setChecked(model_id == current_model)
-                action.triggered.connect(lambda checked, m=model_id: self.select_model(m))
-                model_menu.addAction(action)
+            if current_engine == "whisper":
+                # Whisper models
+                available_models = [
+                    ("tiny", "Tiny"),
+                    ("base", "Base"),
+                    ("distil-small.en", "Small English"),
+                    ("small", "Small"),
+                    ("distil-medium.en", "Medium English"),
+                    ("medium", "Medium"),
+                    ("distil-large-v3", "Large v3 English"),
+                    ("large-v3", "Large v3"),
+                    ("whisper-1", "GROQ Whisper")
+                ]
+                
+                # Add model actions
+                for model_id, display_name in available_models:
+                    action = QAction(display_name, self)
+                    action.setCheckable(True)
+                    action.setChecked(model_id == current_model)
+                    action.triggered.connect(lambda checked, m=model_id: self.select_whisper_model(m))
+                    model_menu.addAction(action)
+                    
+            else:  # parakeet
+                # Parakeet models
+                available_models = [
+                    ("mlx-community/parakeet-rnnt-0.6b", "Realtime-Small (parakeet-rnnt-0.6b)"),
+                    ("mlx-community/parakeet-rnnt-1.1b", "Realtime-Large (parakeet-rnnt-1.1b)")
+                ]
+                
+                # Add model actions
+                for model_id, display_name in available_models:
+                    action = QAction(display_name, self)
+                    action.setCheckable(True)
+                    action.setChecked(model_id == current_model)
+                    action.triggered.connect(lambda checked, m=model_id: self.select_parakeet_model(m))
+                    model_menu.addAction(action)
                 
         except Exception as e:
             logger.error(f"Error setting up model menu: {e}")
@@ -186,8 +207,8 @@ class MenuBarApp(QObject):
             action.setEnabled(False)
             model_menu.addAction(action)
 
-    def select_model(self, model):
-        """Select a new model."""
+    def select_whisper_model(self, model):
+        """Select a new Whisper model."""
         try:
             # Save model selection to config
             config.set("model_size", model)
@@ -196,30 +217,66 @@ class MenuBarApp(QObject):
             # Show loading message
             self.tray_icon.showMessage(
                 "Loading Model",
-                f"Switching to {model} model...",
-                QSystemTrayIcon.Information,
+                f"Switching to Whisper {model} model...",
+                QSystemTrayIcon.MessageIcon.Information,
                 2000
             )
             
-            # Create new service in background
-            self.model_loader = ModelLoaderThread(model)
-            self.model_loader.finished.connect(self.on_model_loaded)
-            self.model_loader.error.connect(self.show_error)
-            self.model_loader.start()
-            
-            # Update tooltip
-            self.update_tooltip()
-            
-            logger.info(f"Started loading model: {model}")
+            self._restart_speech_manager()
+            logger.info(f"Started loading Whisper model: {model}")
             
         except Exception as e:
-            logger.error(f"Error selecting model: {e}")
+            logger.error(f"Error selecting Whisper model: {e}")
             self.tray_icon.showMessage(
                 "Error",
                 f"Failed to switch model: {e}",
-                QSystemTrayIcon.Critical,
+                QSystemTrayIcon.MessageIcon.Critical,
                 2000
             )
+
+    def select_parakeet_model(self, model):
+        """Select a new Parakeet model."""
+        try:
+            # Save model selection to config
+            config.set("parakeet_model", model)
+            config.save()
+            
+            # Show loading message
+            model_name = model.split("/")[-1] if "/" in model else model
+            self.tray_icon.showMessage(
+                "Loading Model",
+                f"Switching to Parakeet {model_name}...",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            
+            self._restart_speech_manager()
+            logger.info(f"Started loading Parakeet model: {model}")
+            
+        except Exception as e:
+            logger.error(f"Error selecting Parakeet model: {e}")
+            self.tray_icon.showMessage(
+                "Error",
+                f"Failed to switch model: {e}",
+                QSystemTrayIcon.MessageIcon.Critical,
+                2000
+            )
+
+    def _restart_speech_manager(self):
+        """Helper method to restart the speech manager."""
+        if hasattr(self, 'speech_manager'):
+            was_listening = self.speech_manager.speech_thread.is_listening
+            self.speech_manager.cleanup()
+            
+            # Reinitialize speech manager
+            self.initialize_services()
+            
+            # Restart listening if it was active
+            if was_listening:
+                self.speech_manager.start_listening()
+        
+        # Update tooltip
+        self.update_tooltip()
 
     def show_settings(self):
         """Show the settings dialog."""
@@ -241,9 +298,19 @@ class MenuBarApp(QObject):
     def update_tooltip(self):
         """Update the tray icon tooltip with current status."""
         status = "Listening" if self.speech_manager.speech_thread.is_listening else "Not Listening"
-        model = config.get("model_size", "large-v3")
+        engine = config.get("transcription_engine", "whisper").title()
+        
+        # Get the appropriate model based on engine
+        if engine.lower() == "whisper":
+            model = config.get("model_size", "large-v3")
+        else:  # parakeet
+            model = config.get("parakeet_model", "mlx-community/parakeet-rnnt-0.6b")
+            # Show a shorter model name for parakeet
+            if "/" in model:
+                model = model.split("/")[-1]
+        
         auto_start = "Will listen on startup" if config.get("auto_listen", True) else "Manual start only"
-        self.tray_icon.setToolTip(f"Dicta - {status}\nModel: {model}\n{auto_start}")
+        self.tray_icon.setToolTip(f"Dicta - {status}\nEngine: {engine}\nModel: {model}\n{auto_start}")
     
     def update_status(self, status: str):
         """Update the application status."""
@@ -354,4 +421,64 @@ class MenuBarApp(QObject):
             self.speech_manager.start_listening()
             
         # Update UI state
-        self.update_listening_state() 
+        self.update_listening_state()
+
+    def setup_engine_menu(self, engine_menu):
+        """Set up the transcription engine selection submenu."""
+        try:
+            # Get current transcription engine
+            current_engine = config.get("transcription_engine", "whisper")
+            
+            # Create engine selection actions
+            whisper_action = QAction("Whisper", self)
+            whisper_action.setCheckable(True)
+            whisper_action.setChecked(current_engine == "whisper")
+            whisper_action.triggered.connect(lambda: self.select_engine("whisper"))
+            engine_menu.addAction(whisper_action)
+            
+            parakeet_action = QAction("Parakeet", self)
+            parakeet_action.setCheckable(True)
+            parakeet_action.setChecked(current_engine == "parakeet")
+            parakeet_action.triggered.connect(lambda: self.select_engine("parakeet"))
+            engine_menu.addAction(parakeet_action)
+            
+        except Exception as e:
+            logger.error(f"Error setting up engine menu: {e}")
+            # Fallback - add whisper only
+            whisper_action = QAction("Whisper", self)
+            whisper_action.setCheckable(True)
+            whisper_action.setChecked(True)
+            whisper_action.triggered.connect(lambda: self.select_engine("whisper"))
+            engine_menu.addAction(whisper_action)
+
+    def select_engine(self, engine):
+        """Select a new transcription engine."""
+        try:
+            # Save engine selection to config
+            config.set("transcription_engine", engine)
+            config.save()
+            
+            # Show loading message
+            self.tray_icon.showMessage(
+                "Switching Engine",
+                f"Switching to {engine.title()} transcription engine...",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            
+            # Restart speech manager with new engine
+            self._restart_speech_manager()
+            
+            # Refresh the menu to update model options
+            self.setup_tray_icon()
+            
+            logger.info(f"Switched to transcription engine: {engine}")
+            
+        except Exception as e:
+            logger.error(f"Error selecting engine: {e}")
+            self.tray_icon.showMessage(
+                "Error",
+                f"Failed to switch engine: {e}",
+                QSystemTrayIcon.MessageIcon.Critical,
+                2000
+            ) 

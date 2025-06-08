@@ -64,7 +64,7 @@ fi
 
 # Create fresh virtual environment with uv
 echo "Creating fresh virtual environment with uv..."
-uv venv --python 3.9
+uv venv --python 3.11
 
 # Create mlx_models directory if it doesn't exist
 mkdir -p mlx_models
@@ -73,17 +73,26 @@ mkdir -p mlx_models
 echo "Installing dependencies with uv..."
 source .venv/bin/activate
 uv pip install -r requirements.txt
+
+# Install parakeet-mlx separately (requires specific installation method)
+echo "Installing parakeet-mlx..."
+uv pip install parakeet-mlx -U
+
 deactivate
 
 # Verify the installation worked
 echo "Verifying installation..."
-if uv run python -c "import numpy; print('✓ Dependencies installed successfully')"; then
+source .venv/bin/activate
+if python -c "import numpy, parakeet_mlx; print('✓ Dependencies installed successfully')" 2>/dev/null; then
     echo "✓ All dependencies are properly installed"
+    deactivate
 else
     echo "✗ Dependency installation failed"
+    deactivate
     exit 1
 fi
 
 # Start the application
 echo "Starting Dicta..."
-uv run python -m app.desktop_ui.main "$@" 
+source .venv/bin/activate
+python -m app.desktop_ui.main "$@" 

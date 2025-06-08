@@ -92,6 +92,55 @@ class SettingsDialog(QDialog):
         # Add some spacing
         layout.addSpacing(20)
         
+        # Transcription Engine Selection
+        engine_title = QLabel("Transcription Engine")
+        engine_title.setFont(QFont("", 12, QFont.Weight.Bold))
+        layout.addWidget(engine_title)
+        
+        engine_layout = QFormLayout()
+        
+        # Engine selection
+        self.engine_combo = QComboBox()
+        self.engine_combo.addItems(["whisper", "parakeet"])
+        self.engine_combo.setCurrentText(self.config.get("transcription_engine", "whisper"))
+        self.engine_combo.currentTextChanged.connect(self._on_engine_changed)
+        engine_layout.addRow("Engine:", self.engine_combo)
+        
+        # Whisper model selection
+        whisper_label = QLabel("Whisper Model:")
+        self.whisper_combo = QComboBox()
+        self.whisper_combo.addItems(["large-v3", "medium", "small", "tiny"])  # Largest to smallest
+        self.whisper_combo.setCurrentText(self.config.get("model_size", "large-v3"))
+        self.whisper_combo.currentTextChanged.connect(
+            lambda text: self.config.set("model_size", text)
+        )
+        engine_layout.addRow(whisper_label, self.whisper_combo)
+        
+        # Parakeet model selection
+        parakeet_label = QLabel("Parakeet Model:")
+        self.parakeet_combo = QComboBox()
+        self.parakeet_combo.addItems([
+            "mlx-community/parakeet-rnnt-0.6b",
+            "mlx-community/parakeet-rnnt-1.1b"
+        ])
+        self.parakeet_combo.setCurrentText(self.config.get("parakeet_model", "mlx-community/parakeet-rnnt-0.6b"))
+        self.parakeet_combo.currentTextChanged.connect(
+            lambda text: self.config.set("parakeet_model", text)
+        )
+        engine_layout.addRow(parakeet_label, self.parakeet_combo)
+        
+        layout.addLayout(engine_layout)
+        
+        # Store references for enabling/disabling
+        self.whisper_label = whisper_label
+        self.parakeet_label = parakeet_label
+        
+        # Update visibility based on current engine
+        self._update_engine_visibility()
+        
+        # Add some spacing
+        layout.addSpacing(20)
+        
         # Model cache settings
         cache_title = QLabel("Model Cache")
         cache_title.setFont(QFont("", 12, QFont.Weight.Bold))
@@ -109,20 +158,26 @@ class SettingsDialog(QDialog):
         layout.addLayout(cache_layout)
         layout.addStretch()
         
-        # Model size selection
-        model_layout = QHBoxLayout()
-        model_label = QLabel("Default Model Size:")
-        self.model_combo = QComboBox()
-        self.model_combo.addItems(["large-v3", "medium", "small", "tiny"])  # Largest to smallest
-        self.model_combo.setCurrentText(self.config.get("model_size", "large-v3"))
-        self.model_combo.currentTextChanged.connect(
-            lambda text: self.config.set("model_size", text)
-        )
-        model_layout.addWidget(model_label)
-        model_layout.addWidget(self.model_combo)
-        layout.addLayout(model_layout)
-        
         self.pages.addWidget(page)
+    
+    def _on_engine_changed(self, engine):
+        """Handle transcription engine change."""
+        self.config.set("transcription_engine", engine)
+        self._update_engine_visibility()
+        
+    def _update_engine_visibility(self):
+        """Update visibility of engine-specific controls."""
+        engine = self.config.get("transcription_engine", "whisper")
+        
+        # Show/hide Whisper controls
+        is_whisper = engine == "whisper"
+        self.whisper_label.setVisible(is_whisper)
+        self.whisper_combo.setVisible(is_whisper)
+        
+        # Show/hide Parakeet controls
+        is_parakeet = engine == "parakeet"
+        self.parakeet_label.setVisible(is_parakeet)
+        self.parakeet_combo.setVisible(is_parakeet)
     
     def setup_groq_api_page(self):
         """Set up the Groq API settings page."""
